@@ -212,7 +212,6 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 自動執行：建置 + 單�
 |---|---|---|
 | `AGENTS.md`（簡體中文） | **AI Agent** | 部署安裝 + 十條鐵律 + 35 工具速查 + 開發紀律 |
 | `README.md` / `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | 人類 | 簡中（zh-Hans，預設）/ 繁中（本檔）/ 英文 / 西語 |
-| `docs/PRD.md`（簡體中文） | 開發者 | 設計與實測紀要（附錄 A~I，含全部語意坑與 mod 行為差異） |
 | `test/` | 開發者 | 四層測試套件 |
 
 ## 授權與致謝

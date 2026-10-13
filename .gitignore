@@ -7,6 +7,9 @@ __pycache__/
 *.pyc
 *.log
 
+# 本地设计/工作文档（PRD 等——留在本地，不随仓库发布）
+docs/
+
 # OS 杂项
 .DS_Store
 Thumbs.db

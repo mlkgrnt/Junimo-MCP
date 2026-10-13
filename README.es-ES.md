@@ -212,7 +212,6 @@ CI (GitHub Actions, ubuntu) se ejecuta en cada push / PR: compilación + pruebas
 |---|---|---|
 | `AGENTS.md` *(chino simplificado)* | **Agentes de IA** | Despliegue + diez reglas de hierro + referencia de 35 herramientas + disciplina de desarrollo |
 | `README.md` / `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | Humanos | Chino simplificado (zh-Hans, predeterminado) / Chino tradicional / Inglés / Español (este archivo) |
-| `docs/PRD.md` *(chino simplificado)* | Desarrolladores | Notas de diseño y pruebas reales (Apéndices A–I: todos los matices semánticos y del mod) |
 | `test/` | Desarrolladores | Suite de pruebas de cuatro capas |
 
 ## Licencia y créditos

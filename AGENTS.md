@@ -217,10 +217,8 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 - **代码地图**：`lib/mcp.ml`（协议核心）/ `lib/intents.ml`（35 个工具实现与渲染，最大文件）/ `lib/game_api.ml`（端点封装）/ `lib/game_state.ml`（状态解析与中文渲染）/ `lib/wait.ml`（等待器）/ `lib/http_client.ml`（curl 层，唯一 IO）。依赖极简：仅 `yojson`。
 - **纪律**：不发假成功（报成功必须在游戏里真发生；失败必须有可读中文原因）；工具描述要写明"什么时候用 + 注意事项"。
 - **部署**：本地开发用新二进制放 `release/vN/junimo-mcp.exe`（`release/` 已 gitignore、不入库），更新 `~/.workbuddy/mcp.json` 指向它；**重启 WorkBuddy 后连接器才加载新版**。对外分发走 GitHub Releases（README 有下载链接；`gh release create vX.Y.Z ...` 一条命令带校验和）。
-- **先读文档**：`docs/PRD.md` 附录 A~I 记录了全部实测的语义坑与 mod 行为差异（含 Remix 的 `/position` 护栏、`/warp` 安全落点、`/festival` 判定口径等）——动代码前必读。
 
 ## 参考
 
 - `README.md` — 安装、工具全表、已知限制
-- `docs/PRD.md` — 设计与实测纪要（附录 A~I）
 - `test/` — 四层测试套件

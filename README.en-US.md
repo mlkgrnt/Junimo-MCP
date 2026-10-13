@@ -212,7 +212,6 @@ CI (GitHub Actions, ubuntu) runs on every push / PR: build + unit tests + mock s
 |---|---|---|
 | `AGENTS.md` *(Simplified Chinese)* | **AI agents** | Deployment + ten iron rules + 35-tool cheat sheet + development discipline |
 | `README.md` / `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | Humans | Simplified Chinese (zh-Hans, default) / Traditional Chinese / English (this file) / Spanish |
-| `docs/PRD.md` *(Simplified Chinese)* | Developers | Design & live-test notes (Appendices A–I: every semantics gotcha and mod behavior quirk) |
 | `test/` | Developers | Four-layer test suite |
 
 ## License & credits

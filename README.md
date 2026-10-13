@@ -213,7 +213,6 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 上自动跑：构建 + 单�
 | `AGENTS.md` | **AI Agent** | 部署安装 + 十条铁律 + 35 工具速查 + 开发纪律 |
 | `README.md` | 人类 | 本文件（简体中文 zh-Hans） |
 | `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | 人类 | 繁中 / 英文 / 西语版本 |
-| `docs/PRD.md` | 开发者 | 设计与实测纪要（附录 A~I，含全部语义坑与 mod 行为差异） |
 | `test/` | 开发者 | 四层测试套件 |
 
 ## 许可与致谢
