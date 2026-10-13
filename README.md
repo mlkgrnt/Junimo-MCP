@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/mlkgrnt/Junimo-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/mlkgrnt/Junimo-MCP/actions/workflows/ci.yml)
 
+**简体中文** · [繁體中文](README.zh-Hant.md) · [English](README.en-US.md) · [Español](README.es-ES.md)
+
 用 **OCaml 手写**的 MCP 服务器：给 AI Agent 一副在《星露谷物语》里干活的手——**35 个意图工具**，从种地收割到取物聚餐、社交过节，全流程可靠执行。
 
 - **协议层**：JSON-RPC 2.0 over stdio，手写实现（`initialize` / `tools/list` / `tools/call`），零 MCP 框架依赖
@@ -209,7 +211,8 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 上自动跑：构建 + 单�
 | 文档 | 给谁看 | 内容 |
 |---|---|---|
 | `AGENTS.md` | **AI Agent** | 部署安装 + 十条铁律 + 35 工具速查 + 开发纪律 |
-| `README.md` | 人类 | 本文件 |
+| `README.md` | 人类 | 本文件（简体中文 zh-Hans） |
+| `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | 人类 | 繁中 / 英文 / 西语版本 |
 | `docs/PRD.md` | 开发者 | 设计与实测纪要（附录 A~I，含全部语义坑与 mod 行为差异） |
 | `test/` | 开发者 | 四层测试套件 |
 
