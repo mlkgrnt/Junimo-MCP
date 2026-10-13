@@ -1,0 +1,17 @@
+# 自身固定 LF——否则在 core.autocrlf=true 的 Windows 上会永远显示"已修改"
+.gitattributes text eol=lf
+
+# 默认自动识别文本
+* text=auto
+
+# shell 脚本必须 LF（CRLF 会以 `$'\r': command not found` 形式神秘失败）
+*.sh text eol=lf
+
+# 源码与文档统一 LF，保证跨平台 diff 干净
+*.ml  text eol=lf
+*.mli text eol=lf
+*.py  text eol=lf
+*.md  text eol=lf
+*.yml text eol=lf
+dune         text eol=lf
+dune-project text eol=lf

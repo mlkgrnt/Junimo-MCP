@@ -1,0 +1,36 @@
+# CI：在全新克隆上完成「构建 + 全部免游戏测试」。
+# 零依赖偏见：唯一的第三方 OCaml 库是 yojson；mock 冒烟只用 Python 标准库。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: 构建与测试（Linux）
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v7
+
+      - name: 装配 OCaml 5.5（经 opam）
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.5"
+
+      - name: 安装依赖（唯一的第三方库：yojson）
+        run: opam install --yes yojson
+
+      - name: 构建（这一步在验证：干净的源码树可以编译）
+        run: opam exec -- dune build
+
+      - name: 单元测试（验证：JSON-RPC 编解码 / 状态解析渲染 / 地块数学）
+        run: opam exec -- dune runtest
+
+      - name: mock 冒烟（验证：114 项全流程断言，不需要游戏）
+        run: python3 test/mock_smoke.py

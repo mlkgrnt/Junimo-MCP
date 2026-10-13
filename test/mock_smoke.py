@@ -1,0 +1,412 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""mock 全流程冒烟：起 mock NagiBridge → 跑 main.exe 完整剧情链 → 断言。
+
+用法: python mock_smoke.py
+依赖: 已构建的 _build/default/bin/main.exe（bash build.sh build）
+
+剧情链: 握手 → 17 工具核对 → get_state → go_to → till 2x2 → plant 1x4 →
+        water（自动扫描 12 格）→ harvest → get_inventory → 菜单流程 →
+        动作工具抽查 → warp → 错误路径。
+"""
+
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+EXE = os.path.join(ROOT, "_build", "default", "bin", "main.exe")
+MOCK = os.path.join(HERE, "mock_nagibridge.py")
+PORT = 8792
+PY = sys.executable
+
+results = []
+
+
+def check(name, cond, extra=""):
+    ok = bool(cond)
+    results.append((name, ok))
+    suffix = ""
+    if not ok and extra:
+        suffix = "  [" + str(extra)[:230].replace("\n", " / ") + "]"
+    print(("ok   - " if ok else "FAIL - ") + name + suffix)
+
+
+def wait_port(port, timeout=10):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        with socket.socket() as s:
+            s.settimeout(0.3)
+            try:
+                s.connect(("127.0.0.1", port))
+                return True
+            except OSError:
+                time.sleep(0.1)
+    return False
+
+
+def mock_get(path):
+    with urllib.request.urlopen(f"http://127.0.0.1:{PORT}{path}", timeout=10) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def mock_post(path, body):
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{PORT}{path}",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+class Client:
+    """通过 main.exe 的 stdio 说话（MCP 客户端仿真）。"""
+
+    def __init__(self):
+        env = dict(os.environ)
+        env["STARDEW_API_URL"] = f"http://localhost:{PORT}"
+        self.p = subprocess.Popen(
+            [EXE],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=env,
+            text=True,
+            encoding="utf-8",
+            bufsize=1,
+        )
+        self.next_id = 1
+        self.init_resp = self.request("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}})
+        self.notify("notifications/initialized")
+
+    def _write(self, obj):
+        self.p.stdin.write(json.dumps(obj) + "\n")
+        self.p.stdin.flush()
+
+    def notify(self, method, params=None):
+        self._write({"jsonrpc": "2.0", "method": method, "params": params or {}})
+
+    def request(self, method, params=None):
+        i = self.next_id
+        self.next_id += 1
+        self._write({"jsonrpc": "2.0", "id": i, "method": method, "params": params or {}})
+        line = self.p.stdout.readline()
+        if not line:
+            raise RuntimeError(f"no response for {method}")
+        resp = json.loads(line)
+        assert resp.get("id") == i, f"id mismatch: {resp}"
+        return resp
+
+    def call(self, name, args=None):
+        resp = self.request("tools/call", {"name": name, "arguments": args or {}})
+        r = resp.get("result", {})
+        text = ""
+        if r.get("content"):
+            text = r["content"][0].get("text", "")
+        return text, bool(r.get("isError", False))
+
+    def close(self):
+        try:
+            self.p.stdin.close()
+        except Exception:
+            pass
+        try:
+            self.p.wait(timeout=5)
+        except Exception:
+            self.p.kill()
+
+
+TOOLS_EXPECTED = [
+    "get_state", "look", "get_inventory",
+    "go_to", "warp", "face",
+    "swing_tool", "use_held", "interact", "press_key",
+    "menu_read", "menu_click",
+    "select_item",
+    "till", "plant", "water", "harvest",
+    "sleep", "buy", "ship", "chest_read", "chest_store", "map_info",
+    "pause_time", "resume_time",
+    "eat", "gift", "friendship", "find_npc",
+    "chest_scan", "chest_take", "chest_take_list",
+    "festival", "festival_interact", "festival_answer",
+]
+
+
+def run_chain(c):
+    # ---- 握手与工具清单 ----
+    check(
+        "initialize: serverInfo",
+        c.init_resp.get("result", {}).get("serverInfo", {}).get("name") == "junimo-mcp",
+        str(c.init_resp)[:200],
+    )
+    tl = c.request("tools/list")
+    tools = tl.get("result", {}).get("tools", [])
+    check("tools/list: 共 35 个", len(tools) == 35, f"got {len(tools)}")
+    names = {t["name"] for t in tools}
+    for n in TOOLS_EXPECTED:
+        check(f"工具存在: {n}", n in names)
+    check("schema 均有 inputSchema", all("inputSchema" in t for t in tools))
+
+    # ---- 感知 ----
+    t, err = c.call("get_state")
+    check("get_state: 玩家 Tester", (not err) and "Tester" in t, t)
+    check("get_state: 位置 (9,9)", (not err) and "(9,9)" in t, t)
+    check("get_state: 季节渲染", "春 13日" in t, t)
+
+    # ---- 移动 ----
+    t, err = c.call("go_to", {"x": 5, "y": 4})
+    check("go_to: 已到达", (not err) and "已到达" in t, t)
+    st = mock_get("/state")
+    check("go_to: mock 坐标 (5,4)", (st["player"]["x"], st["player"]["y"]) == (5, 4), st["player"])
+
+    # ---- 锄地 2x2 ----
+    t, err = c.call("till", {"x": 3, "y": 2, "rows": 2, "length": 2})
+    check("till: 成功 4/4", (not err) and "成功 4/4" in t, t)
+    sur = mock_get("/surroundings?radius=25")
+    tile = next((tt for tt in sur["tiles"] if tt["x"] == 3 and tt["y"] == 2), None)
+    check("till: (3,2) 变 HoeDirt", tile and tile.get("terrain") == "HoeDirt", str(tile))
+    t, err = c.call("till", {"x": 3, "y": 2, "rows": 2, "length": 2})
+    check("till 重跑: 4 格幂等跳过", (not err) and "另有 4 格已完成" in t, t)
+
+    # ---- 播种 1x4 ----
+    t, err = c.call("plant", {"seed": "Parsnip Seeds", "x": 3, "y": 4, "length": 4})
+    check("plant: 成功 4/4", (not err) and "成功 4/4" in t, t)
+    inv = mock_get("/state")["inventory"]
+    seeds = next((it for it in inv if it["name"] == "Parsnip Seeds"), None)
+    check("plant: 种子 15→11", seeds and seeds["stack"] == 11, str(seeds))
+    t, err = c.call("plant", {"seed": "Parsnip Seeds", "x": 3, "y": 4, "length": 4})
+    check("plant 重跑: 已占用格跳过", (not err) and "另有 4 格已完成" in t, t)
+
+    # ---- 浇水（自动扫描：c区4 + R区4 + 新种4 = 12）----
+    t, err = c.call("water", {"radius": 15})
+    check("water: 成功 12/12", (not err) and "成功 12/12" in t, t)
+    sur = mock_get("/surroundings?radius=25")
+    watered_cells = {
+        (tt["x"], tt["y"]) for tt in sur["tiles"] if tt.get("watered") and tt.get("crop")
+    }
+    expect = {(x, y) for x in range(3, 7) for y in (4, 5, 7)}
+    check("water: 12 格全浇上", expect.issubset(watered_cells), f"missing {expect - watered_cells}")
+    wc = next(it for it in mock_get("/state")["inventory"] if it["name"] == "Watering Can")
+    check("water: 水壶有消耗", 0 < wc["waterLeft"] <= 40, str(wc))
+    t, err = c.call("water", {"radius": 15})
+    check("water 重跑: 无待浇作物", (not err) and "没有找到需要浇水的作物" in t, t)
+
+    # ---- 收割 ----
+    t, err = c.call("harvest", {"radius": 15})
+    check("harvest: 4 个", (not err) and "4 个" in t, t)
+
+    # ---- 背包 ----
+    t, err = c.call("get_inventory")
+    check("get_inventory: Parsnip x4", (not err) and "Parsnip x4" in t, t)
+    check("get_inventory: 水壶带水量", "水" in t and "/40" in t, t)
+
+    # ---- 环视 ----
+    t, err = c.call("look", {"radius": 10})
+    check("look: 有作物段", (not err) and "作物" in t, t)
+    check("look: 已浇水状态可见", "已浇水" in t, t)
+
+    # ---- 菜单流程 ----
+    t, err = c.call("menu_read")
+    check("menu_read: 无菜单", "没有菜单" in t, t)
+    mock_post("/mock/set", {"menu": "dialogue"})
+    t, err = c.call("menu_read")
+    check("menu_read: 读到对话", "DialogueBox" in t and "你好" in t, t)
+    t, err = c.call("menu_click", {"option": 0})
+    check("menu_click: 选项后关闭", "菜单已关闭" in t, t)
+
+    # ---- 动作工具抽查 ----
+    t, err = c.call("press_key", {"key": "confirm"})
+    check("press_key", (not err) and "confirm" in t, t)
+    t, err = c.call("face", {"direction": 2})
+    check("face", (not err) and "已转向" in t, t)
+    t, err = c.call("select_item", {"name": "Axe"})
+    check("select_item: Axe", (not err) and "Axe" in t, t)
+    t, err = c.call("swing_tool", {})
+    check("swing_tool: 挥了 Axe", (not err) and "Axe" in t, t)
+    t, err = c.call("use_held")
+    check("use_held", (not err) and "已使用手持物" in t, t)
+    t, err = c.call("interact")
+    check("interact", (not err) and "交互面向格" in t, t)
+
+    # ---- warp ----
+    t, err = c.call("warp", {"location": "Farm"})
+    check("warp: 到 Farm", (not err) and "已到达" in t, t)
+
+    # ---- 长距分段导航（BFS 上限场景：长距直走失败但分段可达）----
+    mock_post("/mock/set", {"x": 1, "y": 1})
+    mock_post("/mock/set", {"no_path_long": 22})
+    t, err = c.call("go_to", {"x": 18, "y": 11})
+    check("go_to: 长距自动分段到达", (not err) and "已到达" in t, t)
+    st = mock_get("/state")
+    check("go_to: 分段后精确到达 (18,11)",
+          (st["player"]["x"], st["player"]["y"]) == (18, 11), st["player"])
+    mock_post("/mock/set", {"no_path_long": 0})
+
+    # ---- 直线回退防护（全程寻路失败：分段接力也救不了 → 拒绝）----
+    mock_post("/mock/set", {"no_path": True})
+    t, err = c.call("go_to", {"x": 20, "y": 20})
+    check("go_to: 直线回退被拒绝（含分段接力）", err and "寻路失败" in t, t)
+    mock_post("/mock/set", {"no_path": False})
+
+    # ---- 错误路径 ----
+    mock_post("/mock/set", {"world": 0})
+    t, err = c.call("go_to", {"x": 1, "y": 1})
+    check("未就绪: go_to isError", err and "存档" in t, t)
+    t, err = c.call("look", {"radius": 3})
+    check("未就绪: look isError", err, t)
+    t, err = c.call("get_state")
+    check("未就绪: get_state isError", err and "存档" in t, t)
+    mock_post("/mock/set", {"world": 1})
+
+    # ---- 生计工具（v2）----
+    t, err = c.call("map_info")
+    check("map_info: 建筑与传送点", (not err) and "Farmhouse" in t and "BusStop" in t, t)
+
+    t, err = c.call("chest_read", {"x": 5, "y": 9})
+    check("chest_read: 读到箱子内容", (not err) and "Maple Seed x4" in t, t)
+
+    t, err = c.call("buy", {"id": "472", "quantity": 2})
+    check("buy: 买入 2 颗种子", (not err) and "Parsnip Seeds x2" in t, t)
+    t, err = c.call("buy", {"id": "999999"})
+    check("buy: 无效 id 报错", err, t)
+
+    t, err = c.call("ship", {})
+    check("ship: 没给 name/all 报错", err and "all=true" in t, t)
+    t, err = c.call("ship", {"name": "Parsnip"})
+    check("ship: 发货 Parsnip", (not err) and "发货箱" in t and "Parsnip x4" in t, t)
+
+    t, err = c.call("chest_store", {"x": 5, "y": 9, "name": "Parsnip Seeds"})
+    check("chest_store: 存种子进箱", (not err) and "Parsnip Seeds x13" in t, t)
+    t, err = c.call("chest_read", {"x": 5, "y": 9})
+    check("chest_read: 存入后可见", (not err) and "Parsnip Seeds" in t, t)
+
+    t, err = c.call("pause_time")
+    check("pause_time: 已冻结", (not err) and "冻结" in t, t)
+    t, err = c.call("resume_time")
+    check("resume_time: 已恢复", (not err) and "恢复" in t, t)
+
+    t, err = c.call("sleep")
+    check("sleep: 翻日成功", (not err) and "睡醒" in t and "14 日" in t, t)
+
+    # ---- v3 工具（Remix：天气/吃/社交/箱子/节日）----
+    t, err = c.call("get_state")
+    check("get_state: 天气渲染（晴天）", (not err) and "【天气】晴天" in t, t)
+    mock_post("/mock/set", {"weather": 1})
+    t, err = c.call("get_state")
+    check("get_state: 雨天渲染", (not err) and "【天气】雨天" in t, t)
+    t, err = c.call("get_inventory")
+    check("strip: 速报行含天气词", "雨天" in t, t)
+    mock_post("/mock/set", {"weather": 0})
+
+    mock_post("/mock/set", {"stamina": 100})
+    t, err = c.call("eat", {"name": "Cheese"})
+    check("eat: 吃 Cheese 回体力", (not err) and "已吃下 Cheese" in t and "体力 100→150" in t, t)
+    inv = mock_get("/state")["inventory"]
+    cheese = next((it for it in inv if it["name"] == "Cheese"), None)
+    check("eat: Cheese 2→1", cheese and cheese["stack"] == 1, str(cheese))
+    t, err = c.call("eat", {"name": "Hoe"})
+    check("eat: 工具不可食用报错", err and "不可食用" in t, t)
+
+    t, err = c.call("friendship", {"npc": "Abigail"})
+    check("friendship: 直查 Abigail", (not err) and "好感 100 点（0 心）" in t, t)
+    t, err = c.call("friendship", {"npc": "阿比盖尔"})
+    check("friendship: 中文名自动解析", (not err) and "Abigail" in t and "100 点" in t, t)
+
+    t, err = c.call("find_npc", {"name": "阿比盖尔"})
+    check("find_npc: 找到并带位置", (not err) and "Abigail" in t and "Farm(6,3)" in t, t)
+    t, err = c.call("find_npc", {"name": "不存在的人"})
+    check("find_npc: 找不到报错", err and "没有找到" in t, t)
+
+    t, err = c.call("gift", {"target": "Abigail", "item": "Daffodil"})
+    check("gift: 送 Daffodil 成功", (not err) and "好感 100→180" in t and "最爱" in t, t)
+    t, err = c.call("gift", {"target": "Abigail", "item": "Daffodil"})
+    check("gift: 今日重复被拒", err and "送过" in t, t)
+    t, err = c.call("friendship", {"npc": "Abigail"})
+    check("friendship: 送礼后记账", (not err) and "180 点" in t and "今天已送 1/1" in t, t)
+
+    t, err = c.call("chest_scan")
+    check("chest_scan: 列出箱子 (5,9)", (not err) and "(5,9)" in t and "Fiber x2" in t, t)
+    t, err = c.call("chest_take", {"x": 5, "y": 9, "name": "Fiber"})
+    check("chest_take: 取出 Fiber x2", (not err) and "Fiber x2" in t, t)
+    inv = mock_get("/state")["inventory"]
+    check("chest_take: Fiber 进背包", any(it["name"] == "Fiber" and it["stack"] == 2 for it in inv), str(inv))
+    t, err = c.call("chest_take", {"x": 5, "y": 9, "name": "NotExist"})
+    check("chest_take: 取不到如实报", (not err) and "没有取出任何物品" in t, t)
+    t, err = c.call("chest_take", {"x": 5, "y": 9})
+    check("chest_take: 缺 name/slot 报错", err and "至少给" in t, t)
+
+    mock_post("/mock/set", {"x": 18, "y": 11})
+    t, err = c.call("chest_take_list", {"items": ["Maple Seed x2"]})
+    check("chest_take_list: 远箱列 tooFar", (not err) and "够不着" in t and "(5,9)" in t, t)
+    mock_post("/mock/set", {"x": 3, "y": 9})
+    t, err = c.call("chest_take_list", {"items": ["Maple Seed x2"]})
+    check("chest_take_list: 近距取到 Maple Seed", (not err) and "Maple Seed：取到 2 个" in t, t)
+    t, err = c.call("chest_take_list", {"items": ["Nope Thing"]})
+    check("chest_take_list: 找不到如实列", (not err) and "没找到" in t, t)
+    t, err = c.call("chest_take_list", {})
+    check("chest_take_list: 空清单报错", err and "items" in t, t)
+
+    t, err = c.call("festival")
+    check("festival: 无活动 + 下一个花舞节", (not err) and "花舞节" in t and "没有节日活动" in t, t)
+    mock_post("/mock/set", {"festival": True})
+    t, err = c.call("festival")
+    check("festival: 活动进行中", (not err) and "Egg Festival" in t and "分数 3" in t, t)
+    t, err = c.call("festival_interact", {"name": "Abigail"})
+    check("festival_interact: 成功", (not err) and "已与 Abigail 交互" in t, t)
+    t, err = c.call("festival_answer", {"answer": 1})
+    check("festival_answer: 提交选项", (not err) and "已提交选项 1" in t, t)
+    mock_post("/mock/set", {"festival": False})
+    t, err = c.call("festival_interact", {})
+    check("festival_interact: 无活动报错", err and "No active event" in t, t)
+
+    t, err = c.call("nope")
+    check("未知工具 isError", err and "未知工具" in t, t)
+    t, err = c.call("till", {})
+    check("缺参数 isError", err and "缺少必填参数" in t, t)
+
+
+def main():
+    if not os.path.exists(EXE):
+        print(f"ERROR: 未找到 {EXE}，先跑 bash build.sh build")
+        return 2
+
+    mock = subprocess.Popen(
+        [PY, MOCK, "--port", str(PORT)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        if not wait_port(PORT):
+            print("ERROR: mock 未能启动")
+            return 2
+        c = Client()
+        try:
+            run_chain(c)
+        finally:
+            c.close()
+    finally:
+        mock.terminate()
+        try:
+            mock.wait(timeout=5)
+        except Exception:
+            mock.kill()
+
+    failed = [n for n, ok in results if not ok]
+    total = len(results)
+    print(f"\n=== mock_smoke: {total - len(failed)}/{total} passed ===")
+    if failed:
+        print("FAILURES:")
+        for n in failed:
+            print("  -", n)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,3 @@
+(library
+ (name stardew_mcp)
+ (libraries yojson unix))

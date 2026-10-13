@@ -1,0 +1,12 @@
+# 构建产物（本地生成，不入库；成品二进制通过 GitHub Releases 分发）
+_build/
+release/
+
+# Python：缓存与运行残留
+__pycache__/
+*.pyc
+*.log
+
+# OS 杂项
+.DS_Store
+Thumbs.db
