@@ -9,7 +9,10 @@ let () =
   set_binary_mode_in stdin true;
   set_binary_mode_out stdout true;
   Config.init ();
-  Config.info "junimo-mcp 启动（api=%s）" (Config.api_url ());
+  Wait.init_settle ();
+  Config.info "junimo-mcp 启动（api=%s, settle=%dms%s）" (Config.api_url ())
+    (Wait.current_settle_ms ())
+    (if !Wait.settle_auto then " auto" else " fixed");
   let rec loop () =
     match input_line stdin with
     | line ->

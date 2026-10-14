@@ -7,9 +7,9 @@
 用 **OCaml 手写**的 MCP 服务器：给 AI Agent 一副在《星露谷物语》里干活的手——**35 个意图工具**，从种地收割到取物聚餐、社交过节，全流程可靠执行。
 
 - **协议层**：JSON-RPC 2.0 over stdio，手写实现（`initialize` / `tools/list` / `tools/call`），零 MCP 框架依赖
-- **控制层**：curl 子进程 → [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) HTTP（默认 `http://localhost:7842`）→ 游戏内角色
+- **控制层**：原生 HTTP + keep-alive（OCaml socket）→ [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix)（默认 `http://localhost:7842`）→ 游戏内角色
 - **不假成功**：工具报成功 = 游戏里真的发生了；失败大多无副作用（送礼失败自动退礼、吃失败不扣物），可放心重试
-- **依赖极简**：唯一第三方 OCaml 库是 yojson；运行只需要系统自带的 curl
+- **依赖极简**：唯一第三方 OCaml 库是 yojson；**运行零外部依赖**（HTTP 走原生 socket，不需要系统 curl；`STARDEW_HTTP=curl` 可回退到旧路径）
 
 ## 只想用、不想开发？让 Agent 一键部署
 
@@ -189,8 +189,11 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 上自动跑：构建 + 单�
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `STARDEW_API_URL` | `http://localhost:7842` | NagiBridge 地址（必须 localhost） |
-| `STARDEW_CURL` | 自动探测 | curl.exe 路径覆盖 |
-| `STARDEW_TIMEOUT` | `30` | 单次 HTTP 调用超时（秒） |
+| `STARDEW_HTTP` | `native` | HTTP 实现：`native`（原生 socket + keep-alive）/ `curl`（回退，排查用） |
+| `STARDEW_HTTP_TIMEOUT` | `30` | 单次 HTTP 调用超时（秒；批量端点可调大） |
+| `STARDEW_SETTLE` | 自适应 | 动作结算等待：不设=自适应（400ms 起，失败 +150 / 连续成功 −50）；`NNN` 固定毫秒；`fixed` = 旧行为 550ms |
+| `STARDEW_TIMEOUT` | `30` | 轮询总超时（秒） |
+| `STARDEW_CURL` | 自动探测 | curl.exe 路径覆盖（仅 `STARDEW_HTTP=curl` 时用） |
 | `STARDEW_NO_STRIP` | 未设 | `=1` 关闭返回文本末尾的状态速报 |
 | `STARDEW_LOG` | `warn` | stderr 日志级别（debug / info / warn） |
 

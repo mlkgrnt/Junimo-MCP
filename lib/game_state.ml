@@ -141,7 +141,29 @@ let of_json (j : Yojson.Safe.t) : t =
     raw = j;
   }
 
-let fetch () : t = Game_api.state () |> of_json
+(* ---------- 状态读取的来源追踪 ----------
+
+   状态速报（strip）原本会重新拉一次 /state（多一次完整 curl 往返）。这里记录
+   "最近一次状态读取"及其代际计数，供速报复用**本次工具调用内**已经取过的状态——
+   速报是给人的摘要，与实时差几百毫秒无妨，省下的是每个工具一次完整拉取。 *)
+
+let fetch_gen = ref 0
+let last_fetch : (t * int) option ref = ref None
+
+(** 当前代际（调用方在工具执行前取快照，作为"本次调用"的基线） *)
+let fetch_gen_count () : int = !fetch_gen
+
+(** 若在 [gen_min] 代之后成功取过状态，则返回该状态；否则 None *)
+let recent_fetch_since (gen_min : int) : t option =
+  match !last_fetch with
+  | Some (st, g) when g > gen_min -> Some st
+  | _ -> None
+
+let fetch () : t =
+  let st = Game_api.state () |> of_json in
+  incr fetch_gen;
+  last_fetch := Some (st, !fetch_gen);
+  st
 
 (* ---------- 渲染 ---------- *)
 

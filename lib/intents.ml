@@ -45,6 +45,19 @@ let require_world () : Game_state.t =
   if not st.world_ready then failwith no_world_msg;
   st
 
+(* 动作前卫检：模态界面（对话/菜单）打开时，mod 的动作端点（/select /use …）会挂到
+   HTTP 超时才回（真机实测：读档问候对话开着时 till 的 /select 等了 30s）。
+   所以动作类工具先查一次状态，有菜单**立刻中止**——让 Agent 先处理菜单。 *)
+let require_no_menu () : unit =
+  let st = require_world () in
+  match st.active_menu with
+  | Some m ->
+      failwith
+        (Printf.sprintf
+           "当前有菜单/对话打开（%s），已中止动作（模态界面下动作请求会挂住）。请先用 \
+            menu_read / menu_click / press_key 处理后再执行。" m)
+  | None -> ()
+
 (* schema 帮助 *)
 let p_int ?minimum ?maximum ?default desc =
   let fields =
@@ -216,16 +229,21 @@ let run_cells ~(op : int -> int -> op_outcome) (cells : (int * int) list) : exec
          | _ -> ());
          (try
             match stand_and_face (tx, ty) with
-            | Error why -> failed := (tx, ty, why) :: !failed
+            | Error why ->
+                Wait.adapt ~ok:false;
+                failed := (tx, ty, why) :: !failed
             | Ok () -> (
                 match op tx ty with
                 | Op_ok ->
+                    Wait.adapt ~ok:true;
                     Wait.settle ();
                     incr ok_n
                 | Op_skip _ ->
+                    Wait.adapt ~ok:true;
                     Wait.settle ();
                     incr skip_n
                 | Op_fail why ->
+                    Wait.adapt ~ok:false;
                     Wait.settle ();
                     failed := (tx, ty, why) :: !failed)
           with
@@ -656,7 +674,7 @@ let tool_select_item =
     run =
       (fun args ->
         let name = need_str args "name" in
-        let _ = require_world () in
+        let _ = require_no_menu () in
         let res = Game_api.select ~name () in
         let sel =
           match Game_state.member "selected" res with
@@ -694,14 +712,22 @@ let tool_till =
         let rows = get_int args "rows" 1 in
         let length = get_int args "length" 1 in
         let dir = Farm.direction_of_string (get_str args "direction" "horizontal") in
-        let _ = require_world () in
+        let _ = require_no_menu () in
         let cells = Farm.snake_cells ~start_x:x ~start_y:y ~rows ~length ~direction:dir () in
         (* 先选中锄头；/use 会做游戏侧校验（不可锄的格返回明确错误，而不是假成功） *)
         let _ = Game_api.select ~name:"Hoe" () in
         let r =
           run_cells
             ~op:(fun tx ty ->
-              op_use ~tile:(tx, ty) ~soft:[ "Tile already tilled" ] ())
+              (* 不可锄的格上，mod 的 /use 会"空挥 + 假成功"（真机实测 2026-10-14：
+                 返回 ok:true + 目标格，但地块毫无变化、体力照扣）——故先按 /surroundings
+                 的 diggable 判一次；明确不可锄就直接记失败（不空挥，省体力）。 *)
+              match tile_info ~tx ~ty with
+              | Some t
+                when Game_state.member "diggable" t = None
+                     && Game_state.get_str t [ "terrain" ] <> "HoeDirt" ->
+                  Op_fail "该格不可锄（游戏侧无可耕地属性），已跳过"
+              | _ -> op_use ~tile:(tx, ty) ~soft:[ "Tile already tilled" ] ())
             cells
         in
         render_exec_result
@@ -735,7 +761,7 @@ let tool_plant =
         let rows = get_int args "rows" 1 in
         let length = get_int args "length" 1 in
         let dir = Farm.direction_of_string (get_str args "direction" "horizontal") in
-        let _ = require_world () in
+        let _ = require_no_menu () in
         let _ = Game_api.select ~name:seed () in
         Printf.eprintf "[junimo-mcp] plant: 已选中种子 %s\n%!" seed;
         let cells = Farm.snake_cells ~start_x:x ~start_y:y ~rows ~length ~direction:dir () in
@@ -772,7 +798,7 @@ let tool_water =
     run =
       (fun args ->
         let radius = get_int args "radius" 15 in
-        let _ = require_world () in
+        let _ = require_no_menu () in
         let sur = Game_api.surroundings ~radius () in
         let cells =
           match Game_state.member "tiles" sur with
@@ -1842,12 +1868,19 @@ let call (name : string) (args : Yojson.Safe.t) : (string, string) result =
       Error (Printf.sprintf "未知工具：%s（可用工具见 tools/list）" name)
   | Some tool -> (
       try
+        (* 基线代际：状态速报只复用"本次调用内"取过的状态（见 game_state.ml） *)
+        let gen0 = Game_state.fetch_gen_count () in
         let text = tool.run args in
         let text =
           if tool.with_strip && not (Config.no_strip ()) then
-            match Game_state.fetch () with
+            let get_st () =
+              match Game_state.recent_fetch_since gen0 with
+              | Some st -> st
+              | None -> Game_state.fetch ()
+            in
+            (match get_st () with
             | st -> text ^ "\n" ^ Game_state.strip st
-            | exception _ -> text
+            | exception _ -> text)
           else text
         in
         Ok text

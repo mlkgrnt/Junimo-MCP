@@ -9,7 +9,7 @@
 - **協定層**：JSON-RPC 2.0 over stdio，手寫實作（`initialize` / `tools/list` / `tools/call`），零 MCP 框架相依
 - **控制層**：curl 子行程 → [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) HTTP（預設 `http://localhost:7842`）→ 遊戲內角色
 - **不假成功**：工具回報成功 = 遊戲裡真的發生了；失敗大多無副作用（送禮失敗自動退禮、吃東西失敗不扣物），可放心重試
-- **相依極簡**：唯一的第三方 OCaml 函式庫是 yojson；執行只需要系統內建的 curl
+- **相依極簡**：唯一的第三方 OCaml 函式庫是 yojson；**執行零外部相依**（HTTP 走原生 socket，不需要系統 curl；`STARDEW_HTTP=curl` 可回退）
 
 ## 只想使用、不想開發？讓 Agent 一鍵部署
 
@@ -189,8 +189,11 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 自動執行：建置 + 單�
 | 變數 | 預設 | 說明 |
 |---|---|---|
 | `STARDEW_API_URL` | `http://localhost:7842` | NagiBridge 位址（必須 localhost） |
-| `STARDEW_CURL` | 自動偵測 | curl.exe 路徑覆寫 |
-| `STARDEW_TIMEOUT` | `30` | 單次 HTTP 呼叫逾時（秒） |
+| `STARDEW_HTTP` | `native` | HTTP 實作：`native`（原生 socket + keep-alive）/ `curl`（回退） |
+| `STARDEW_HTTP_TIMEOUT` | `30` | 單次 HTTP 呼叫逾時（秒；批次端點可調大） |
+| `STARDEW_SETTLE` | 自適應 | 動作結算等待：不設=自適應（400ms 起，失敗 +150 / 連續成功 −50）；`NNN` 固定毫秒；`fixed` = 舊行為 550ms |
+| `STARDEW_TIMEOUT` | `30` | 輪詢總逾時（秒） |
+| `STARDEW_CURL` | 自動偵測 | curl.exe 路徑覆寫（僅 `STARDEW_HTTP=curl` 時用） |
 | `STARDEW_NO_STRIP` | 未設 | `=1` 關閉回傳文字末尾的狀態速報 |
 | `STARDEW_LOG` | `warn` | stderr 日誌等級（debug / info / warn） |
 

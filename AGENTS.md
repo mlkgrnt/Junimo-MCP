@@ -132,6 +132,7 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 | 现象 | 原因 / 处理 |
 |---|---|
 | 游戏开着但连不上 | mod 没到位，或旧版 mod 残留（UniqueID 冲突，检查 `Mods` 下是否同时有新旧两个 NagiBridge） |
+| 动作"没反应"/报不可达 | ① 有菜单/对话开着（模态界面下动作端点会挂到超时）→ 先 `menu_read`/`press_key cancel` 处理；② **游戏窗口失焦**（SDV 失焦会暂停，动作不生效）→ 把游戏窗口切到前台 |
 | GitHub 下载 exe 缓慢 / 不通 | 换时段或让用户手动下载 Releases；也可从源码构建（见文末《开发 Agent》） |
 | 手写调试请求被拒 | 只能 `http://localhost:7842`（不能 127.0.0.1）；命令行调用要带 `--noproxy '*'`（绕系统代理） |
 | SMAPI 控制台红字 "Steam achievements won't work" | 正常（非 Steam 启动的代价，不影响功能） |
@@ -214,7 +215,7 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 - **构建**：`bash build.sh build`（→ `_build/default/bin/main.exe`）；`bash build.sh runtest`（单测）；`bash build.sh release`（拷进 `release/`）。受管 Cygwin 环境走 `build.sh`（Windows 细节见 README）；标准 opam 环境直接用 `dune build` / `dune runtest`。
 - **测试四层**：单测（`dune runtest`）→ mock 冒烟（`python test/mock_smoke.py`，**不需要游戏**，114 项）→ 真机脚本（`test/live_*.py`，需要游戏在跑）→ 压测（`live_soak.py`）。
 - **改行为 → 必须同步测试**：新增/修改端点要同步改 `test/mock_nagibridge.py` + `test/mock_smoke.py` 断言；涉及真机语义的补 `test/live_*.py`。
-- **代码地图**：`lib/mcp.ml`（协议核心）/ `lib/intents.ml`（35 个工具实现与渲染，最大文件）/ `lib/game_api.ml`（端点封装）/ `lib/game_state.ml`（状态解析与中文渲染）/ `lib/wait.ml`（等待器）/ `lib/http_client.ml`（curl 层，唯一 IO）。依赖极简：仅 `yojson`。
+- **代码地图**：`lib/mcp.ml`（协议核心）/ `lib/intents.ml`（35 个工具实现与渲染，最大文件）/ `lib/game_api.ml`（端点封装）/ `lib/game_state.ml`（状态解析与中文渲染）/ `lib/wait.ml`（等待器 + 自适应结算）/ `lib/http_client.ml`（HTTP 层：原生 socket + keep-alive，唯一 IO；`STARDEW_HTTP=curl` 回退）。依赖极简：仅 `yojson`。
 - **纪律**：不发假成功（报成功必须在游戏里真发生；失败必须有可读中文原因）；工具描述要写明"什么时候用 + 注意事项"。
 - **部署**：本地开发用新二进制放 `release/vN/junimo-mcp.exe`（`release/` 已 gitignore、不入库），更新 `~/.workbuddy/mcp.json` 指向它；**重启 WorkBuddy 后连接器才加载新版**。对外分发走 GitHub Releases（README 有下载链接；`gh release create vX.Y.Z ...` 一条命令带校验和）。
 

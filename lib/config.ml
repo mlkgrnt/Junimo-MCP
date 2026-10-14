@@ -5,6 +5,9 @@
     | STARDEW_API_URL | http://localhost:7842    | NagiBridge 地址          |
     | STARDEW_CURL    | 自动探测                 | curl.exe 路径覆盖        |
     | STARDEW_TIMEOUT | 30                       | 轮询总超时（秒）         |
+    | STARDEW_HTTP | native                      | HTTP 实现：native / curl |
+    | STARDEW_HTTP_TIMEOUT | 30                 | 单次 HTTP 调用超时（秒） |
+    | STARDEW_SETTLE | 自适应                    | 结算等待；NNN 固定毫秒 / fixed=550 |
     | STARDEW_NO_STRIP| 未设                     | 设 1 关闭状态速报        |
     | STARDEW_LOG     | warn                     | stderr 日志 debug/info/warn |
 
@@ -55,6 +58,19 @@ let curl_path () =
 
 let timeout_secs () =
   match Sys.getenv_opt "STARDEW_TIMEOUT" with
+  | Some v -> (
+      match int_of_string_opt v with Some n when n > 0 -> n | _ -> 30)
+  | None -> 30
+
+(** HTTP 层实现：native（默认：原生 socket + keep-alive）/ curl（旧路径，回退与对照用）。
+    切换见 README 环境变量表。 *)
+let http_impl () = String.lowercase_ascii (getenv "STARDEW_HTTP" "native")
+
+(** HTTP 层：单次请求的最大等待（秒）。默认 30。
+    实测（2026-10-14 真机）：地图加载期间 mod 的动作用主线程排队，可超过 15s ⇒ 默认从
+    15 提到 30；批量端点（/tool_area 等）可能更久，用 STARDEW_HTTP_TIMEOUT 再调大。 *)
+let http_timeout () =
+  match Sys.getenv_opt "STARDEW_HTTP_TIMEOUT" with
   | Some v -> (
       match int_of_string_opt v with Some n when n > 0 -> n | _ -> 30)
   | None -> 30

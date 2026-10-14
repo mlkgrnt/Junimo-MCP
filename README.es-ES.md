@@ -9,7 +9,7 @@ Un servidor MCP **escrito a mano en OCaml**: un par de manos trabajadoras para a
 - **Capa de protocolo**: JSON-RPC 2.0 sobre stdio, implementado a mano (`initialize` / `tools/list` / `tools/call`), sin dependencias de frameworks MCP
 - **Capa de control**: subproceso curl → [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) por HTTP (por defecto `http://localhost:7842`) → el personaje del juego
 - **Sin falsos éxitos**: si una herramienta informa de éxito, es que realmente ocurrió en el juego; la mayoría de los fallos no tienen efectos secundarios (los regalos fallidos se devuelven, comer fallido no consume nada), así que puedes reintentar sin miedo
-- **Dependencias mínimas**: la única biblioteca OCaml de terceros es yojson; en ejecución solo necesita el curl del sistema
+- **Dependencias mínimas**: la única biblioteca OCaml de terceros es yojson; **cero dependencias externas en ejecución** (HTTP por sockets nativos, sin necesidad de curl del sistema; `STARDEW_HTTP=curl` como respaldo)
 
 ## ¿Solo quieres usarlo, no desarrollarlo? Deja que un agente lo despliegue
 
@@ -189,8 +189,11 @@ CI (GitHub Actions, ubuntu) se ejecuta en cada push / PR: compilación + pruebas
 | Variable | Por defecto | Descripción |
 |---|---|---|
 | `STARDEW_API_URL` | `http://localhost:7842` | Dirección de NagiBridge (debe ser localhost) |
-| `STARDEW_CURL` | autodetectado | Sobrescribe la ruta de curl.exe |
-| `STARDEW_TIMEOUT` | `30` | Tiempo de espera por llamada HTTP (segundos) |
+| `STARDEW_HTTP` | `native` | Implementación HTTP: `native` (socket + keep-alive) / `curl` (respaldo) |
+| `STARDEW_HTTP_TIMEOUT` | `30` | Tiempo de espera por petición HTTP (segundos; súbelo para endpoints por lotes) |
+| `STARDEW_SETTLE` | adaptativo | Espera de asentamiento: sin definir = adaptativo (400 ms, +150 al fallar / −50 tras 3 éxitos); `NNN` ms fijos; `fixed` = 550 ms clásico |
+| `STARDEW_TIMEOUT` | `30` | Tiempo de espera total de sondeo (segundos) |
+| `STARDEW_CURL` | autodetectado | Sobrescribe la ruta de curl.exe (solo con `STARDEW_HTTP=curl`) |
 | `STARDEW_NO_STRIP` | sin definir | `=1` desactiva el resumen final de estado |
 | `STARDEW_LOG` | `warn` | Nivel de log en stderr (debug / info / warn) |
 

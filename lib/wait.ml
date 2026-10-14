@@ -2,8 +2,50 @@
 
 let sleep_ms ms = if ms > 0 then Unix.sleepf (float_of_int ms /. 1000.)
 
-(** 动作结算延迟：/tool /use /interact /key 之后固定等待（原作 TOOL_DELAY 0.45~0.55s）。 *)
-let settle () = sleep_ms 550
+(** 动作结算延迟（自适应）。
+
+    原作约定 TOOL_DELAY 0.45~0.55s（固定等待）。实测：每次 550ms 里大半是"以防万一"，
+    而每格动作本身还有回读校验兜底（校验不过会如实报失败，不会被掩盖）。故改为自适应：
+      - 起始 400ms；动作失败 → +150ms（上限 900ms）；连续 3 次成功 → -50ms（下限 250ms）
+    环境变量覆盖（详见 README 环境变量表）：
+      STARDEW_SETTLE=NNN    固定 NNN 毫秒
+      STARDEW_SETTLE=fixed  等同旧行为（固定 550ms） *)
+let settle_ms = ref 400
+let settle_streak = ref 0
+let settle_auto = ref true
+
+let init_settle () =
+  match Sys.getenv_opt "STARDEW_SETTLE" with
+  | None | Some "" -> ()
+  | Some "fixed" ->
+      settle_auto := false;
+      settle_ms := 550
+  | Some v -> (
+      match int_of_string_opt v with
+      | Some n when n >= 0 ->
+          settle_auto := false;
+          settle_ms := n
+      | _ -> ())
+
+let settle () = sleep_ms !settle_ms
+
+(** 按最近一次动作结果调节结算时长（run_cells 逐格调用）。 *)
+let adapt ~(ok : bool) =
+  if !settle_auto then
+    if ok then begin
+      incr settle_streak;
+      if !settle_streak >= 3 && !settle_ms > 250 then begin
+        settle_ms := max 250 (!settle_ms - 50);
+        settle_streak := 0
+      end
+    end
+    else begin
+      settle_streak := 0;
+      settle_ms := min 900 (!settle_ms + 150)
+    end
+
+(** 当前结算时长（毫秒），供日志/观测。 *)
+let current_settle_ms () = !settle_ms
 
 (** 轮询直到 f() 为 true 或超时。返回是否成功。 *)
 let poll_until ?(timeout = 30.0) ?(interval = 0.25) (f : unit -> bool) : bool =
