@@ -110,6 +110,7 @@ class World:
             {"name": "Daffodil", "stack": 2, "category": "物资"},
         ]
         self.menu = None
+        self.active_event = None
         self.move_target = None
         self.move_start = 0.0
         # v3（Remix 仿真）：NPC / 好感 / 天气 / 节日活动
@@ -191,7 +192,7 @@ class World:
                 "weather": self.weather,
             },
             "activeMenu": self.menu,
-            "activeEvent": None,
+            "activeEvent": self.active_event,
             "npcs": [],
             "inventory": self.inv,
         }
@@ -377,7 +378,14 @@ class World:
         key = body.get("key", "confirm")
         count = int(body.get("count", 1))
         if key.lower() in ("confirm", "action") and self.menu is not None:
+            # 真机语义：confirm 只推进**无选项对话**（NPC 招呼/提示框）；
+            # 带选项的问题框按 confirm 不做选择（必须 menu_click），故保持开着。
+            if not self.menu.get("responses"):
+                self.menu = None
+        if key.lower() == "skip" and self.menu is not None:
+            # 剧本事件跳过：真机上 press_key skip 能整段结束事件（含问题框）
             self.menu = None
+            self.active_event = None
         return {"ok": True, "key": key, "count": count}
 
     def select(self, body):
@@ -665,7 +673,7 @@ class World:
 
     def menu_get(self):
         if self.menu is None:
-            return {"ok": True, "open": False, "activeEvent": None}
+            return {"ok": True, "open": False, "activeEvent": self.active_event}
         m = {"ok": True, "open": True, "type": self.menu.get("type", "Menu"),
              "dialogue": self.menu.get("dialogue"),
              "responses": self.menu.get("responses"),
@@ -960,6 +968,7 @@ class World:
             self.festival_active = bool(body["festival"])
         if "menu" in body:
             v = body["menu"]
+            self.active_event = None  # 设菜单 = 清掉上一场事件（测试隔离）
             if v is None:
                 self.menu = None
             elif v == "dialogue":
@@ -973,6 +982,31 @@ class World:
                 }
             elif v == "confirm":
                 self.menu = {"type": "ConfirmationDialog", "dialogue": "确定要这么做吗？"}
+            elif v == "plain":
+                # 无选项对话（NPC 招呼 / 送礼答谢 那类）：responses 为 null
+                self.menu = {
+                    "type": "DialogueBox",
+                    "dialogue": "嗨，你好呀！今天天气不错。",
+                    "responses": None,
+                    "speaker": "阿比盖尔",
+                }
+        if "event" in body:
+            v = body["event"]
+            if v is None:
+                self.active_event = None
+            elif v == "pet":
+                # 仿真真机的"宠物领养"剧本事件：走位触发 → 弹问题框 → 角色不能移动
+                self.active_event = {
+                    "id": "1590166",
+                    "skippable": True,
+                    "message": "我看到它坐在你的农场门口！它可能是无家可归了……",
+                }
+                self.menu = {
+                    "type": "DialogueBox",
+                    "dialogue": "你打算收养这只猫吗？",
+                    "responses": ["是", "否"],
+                    "speaker": None,
+                }
         return {"ok": True}
 
 

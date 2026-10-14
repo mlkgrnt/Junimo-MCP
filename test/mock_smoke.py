@@ -253,6 +253,37 @@ def run_chain(c):
     t, err = c.call("menu_click", {"option": 0})
     check("menu_click: 选项后关闭", "菜单已关闭" in t, t)
 
+    # ---- 模态界面两档处理：无选项对话自动推进 / 带选项绝不代答 ----
+    mock_post("/mock/set", {"menu": "plain"})
+    t, err = c.call("select_item", {"name": "Axe"})
+    check("无选项对话: 自动按掉后动作照常", (not err) and "Axe" in t, t)
+    check("无选项对话: 已被自动关闭", not mock_get("/state").get("activeMenu"),
+          str(mock_get("/state").get("activeMenu")))
+    mock_post("/mock/set", {"menu": "dialogue"})
+    t, err = c.call("select_item", {"name": "Axe"})
+    check("带选项对话: 不代答 + 报错里带选项与原文",
+          err and "可选项" in t and "[0]" in t and "你好" in t, t)
+    check("带选项对话: 保持原样（一个键都没按）",
+          mock_get("/state").get("activeMenu") is not None, "菜单被意外关闭")
+    mock_post("/mock/set", {"menu": None})
+
+    # ---- 剧本事件：默认不跳（快速失败）；STARDEW_AUTO_EVENT=1 才自动 skip ----
+    mock_post("/mock/set", {"event": "pet"})
+    t, err = c.call("select_item", {"name": "Axe"})
+    check("剧本事件: 默认不自动跳过（含事件信息）",
+          err and "剧本事件" in t and "收养" in t, t)
+    ce = Client(env_extra={"STARDEW_AUTO_EVENT": "1"})
+    try:
+        mock_post("/mock/set", {"event": "pet"})
+        t, err = ce.call("select_item", {"name": "Axe"})
+        check("AUTO_EVENT=1: 事件被跳过、动作照常", (not err) and "Axe" in t, t)
+        check("AUTO_EVENT=1: 事件与菜单都已清",
+              mock_get("/state").get("activeMenu") is None and mock_get("/state").get("activeEvent") is None,
+              str(mock_get("/state").get("activeMenu")))
+    finally:
+        ce.close()
+    mock_post("/mock/set", {"menu": None})
+
     # ---- 动作工具抽查 ----
     t, err = c.call("press_key", {"key": "confirm"})
     check("press_key", (not err) and "confirm" in t, t)
@@ -324,7 +355,8 @@ def run_chain(c):
     # ---- 模态界面下 go_to 快速失败（不干等超时；对话/菜单开着时角色无法移动）----
     mock_post("/mock/set", {"menu": "dialogue"})
     t, err = c.call("go_to", {"x": 6, "y": 5})
-    check("go_to: 菜单开着时快速失败", err and "无法移动" in t, t)
+    check("go_to: 菜单开着时快速失败（带选项也一并报出）",
+          err and "已中止走位" in t and "可选项" in t, t)
     mock_post("/mock/set", {"menu": None})
 
     # ---- 错误路径 ----

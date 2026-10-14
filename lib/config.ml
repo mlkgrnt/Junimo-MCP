@@ -12,6 +12,8 @@
     | STARDEW_AREA    | auto                     | till/water 是否走 /tool_area 批量：auto/force/off |
     | STARDEW_AREA_MIN| 4                        | /tool_area 最少作用格数（低于此值逐格） |
     | STARDEW_AREA_TIMEOUT | 90                 | /tool_area 单次等待上限（秒） |
+    | STARDEW_AUTO_MENU | 1                      | 自动推进"无选项对话"（NPC 招呼等） |
+    | STARDEW_AUTO_EVENT | 未设                  | 设 1 = 剧本事件自动跳过（默认不跳） |
     | STARDEW_NO_STRIP| 未设                     | 设 1 关闭状态速报        |
     | STARDEW_LOG     | warn                     | stderr 日志 debug/info/warn |
 
@@ -97,6 +99,19 @@ let area_min_cells () =
   match Sys.getenv_opt "STARDEW_AREA_MIN" with
   | Some v -> (match int_of_string_opt v with Some n when n > 0 -> n | _ -> 4)
   | None -> 4
+
+(** 自动推进"无选项对话"（默认开）。
+
+    模态界面会挡住动作，但其中有一类**不需要任何决策**：NPC 打招呼、送礼答谢、
+    "背包满了东西掉地上"这类 DialogueBox —— 没有选项，按 confirm 是**唯一**能做的事，
+    不丢信息也不做选择。工具会先自动把它按掉再干活（关掉本开关则一律快速失败，
+    交回 Agent 处理）。带选项的问题框、商店、箱子、背包**永不自动处理**。 *)
+let auto_menu () = getenv "STARDEW_AUTO_MENU" "1" <> "0"
+
+(** 剧本事件（过场）自动跳过：默认**关**——跳剧情是口味问题，而且会跳过你可能想看的
+    内容。设 `STARDEW_AUTO_EVENT=1` 后，遇到可跳过的事件（activeEvent.skippable）
+    会自动按一次 skip，让 Agent 不被卡在过场里。 *)
+let auto_event () = getenv "STARDEW_AUTO_EVENT" "0" = "1"
 
 (** /tool_area 单次等待上限（秒）。默认 90——mod 内部要逐锚点走位+蓄力，
     地块大时可达数十秒（mod 自身最多等 10 分钟，我们不等那么久）。 *)

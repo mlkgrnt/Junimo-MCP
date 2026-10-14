@@ -132,7 +132,7 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 | 现象 | 原因 / 处理 |
 |---|---|
 | 游戏开着但连不上 | mod 没到位，或旧版 mod 残留（UniqueID 冲突，检查 `Mods` 下是否同时有新旧两个 NagiBridge） |
-| 动作"没反应"/报不可达 | ① 有菜单/对话开着（模态界面下动作端点会挂到超时）→ 先 `menu_read`/`press_key cancel` 处理；② **游戏窗口失焦**（SDV 失焦会暂停，动作不生效）→ 把游戏窗口切到前台 |
+| 动作"没反应"/报不可达 | ① 有菜单/对话/事件开着（模态界面下动作端点会挂到超时、角色也不能移动）→ 看报错里给的原文与选项处理（`menu_click {"option":N}` / `press_key confirm` / 剧本事件 `press_key skip`）；② **游戏窗口失焦**（SDV 失焦会暂停，动作不生效）→ 把游戏窗口切到前台 |
 | GitHub 下载 exe 缓慢 / 不通 | 换时段或让用户手动下载 Releases；也可从源码构建（见文末《开发 Agent》） |
 | 手写调试请求被拒 | 只能 `http://localhost:7842`（不能 127.0.0.1）；命令行调用要带 `--noproxy '*'`（绕系统代理） |
 | SMAPI 控制台红字 "Steam achievements won't work" | 正常（非 Steam 启动的代价，不影响功能） |
@@ -153,7 +153,7 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 3. **工具是同步的，且内含等待**。每次调用会阻塞到动作在游戏里完成（含内部时序与校验），按返回决定下一步。**你不需要、也不应该自己加延时或连发动作**。
 4. **长时间挂机先冻结时钟**：`pause_time`。游戏时间会流逝——现实约 12 分钟就到凌晨 2:00，角色晕倒并**扣钱**。干完记得 `resume_time`。
 5. **移动失败别硬刚**：`go_to` 报"寻路失败"就是真到不了（服务器拒绝"直穿墙"作弊回退）；报"已到达目标附近"= 目标格站不住、停在相邻格，**视为到达**（游戏里很多格子不可站立，这是设计行为）。
-6. **菜单会中断一切**：动作触发菜单（对话 / 商店 / 节庆）后先 `menu_read` 看内容，再 `menu_click` 处理完，然后继续原任务。
+6. **菜单基本不用你操心**：动作前会**自动按掉"无选项对话"**（NPC 招呼 / 送礼答谢 / 提示框——按 confirm 是唯一能做的事）。只有**带选项的问题框 / 商店 / 箱子 / 背包**会挡下来，并且报错里**直接给原文和带序号的选项**，`menu_click {"option":N}` 一步就能处理（不必先 `menu_read`）。**剧本事件默认不跳**，用 `press_key skip` 跳过（或设 `STARDEW_AUTO_EVENT=1` 让它自动跳）。
 7. **背包容量**：`harvest` 或大量取物前，先 `get_inventory` 确认空位（背包满时收获物会掉地上）。
 8. **体力管理**：批量农活在体力 <15% 时会主动中止；低了就 `eat`（回体力/HP）或回家 `sleep`。
 9. **"没有需要浇水的作物"不是错误**：雨天、洒水器覆盖、或刚浇过时，`water` 会这样回答——如实接受即可。
@@ -205,7 +205,7 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 |---|---|
 | 干完活直接结束回合 | 先 `sleep` 落盘，或明确告诉用户"尚未存档" |
 | `go_to` 失败后对同一目标反复重试 | 改 `warp`（跨图）/ 换目标格 / 如实报告（服务器已判定不可达） |
-| 动作弹出菜单后继续发动作 | 先 `menu_read` → `menu_click` 处理，再继续 |
+| 动作弹出菜单后继续发动作 | 先看报错里给的内容：带选项的 `menu_click {"option":N}`；无选项的对话已自动按掉，不用管 |
 | 假设"应该成功了" | 读返回文本；报错就按文案处理（**错误文案是中文人话，可直接转给用户看**） |
 | 手动逐格移动干活 | 用批量工具的区域/自动扫描参数 |
 | 连发多个动作"抢进度" | 一等一：等当前工具返回再发下一个 |
@@ -218,7 +218,21 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 - **代码地图**：`lib/mcp.ml`（协议核心）/ `lib/intents.ml`（35 个工具实现与渲染，最大文件；含**效果核验式动作** `op_use_effect`）/ `lib/game_api.ml`（端点封装）/ `lib/game_state.ml`（状态解析与中文渲染）/ `lib/wait.ml`（等待器 + 自适应结算 + `/walk_to` 到达轮询）/ `lib/http_client.ml`（HTTP 层：原生 socket + keep-alive，唯一 IO；`STARDEW_HTTP=curl` 回退）。依赖极简：仅 `yojson`。
 - **两条"快路径"（`till`/`water`/`go_to` 内部自动选，无需 Agent 关心）**：`go_to` 走 mod 的 `/walk_to`（一次请求走全程 + 出发前校验越界/门格/站不住；`STARDEW_WALK=move` 可回退旧的分段接力）；`till`/`water` 在**工具升级等级 ≥1** 且格数 ≥4 时走 mod 的 `/tool_area`（矩形蓄力批量；`STARDEW_AREA=off|force` 可强制切换，`STARDEW_AREA_TIMEOUT` 调等待上限）。
 - **纪律**：不发假成功（报成功必须在游戏里真发生；失败必须有可读中文原因）。⚠️ **挥动的生效帧在 `/use` 返回后约 550ms 才落**（真机实测）：所以农活动作一律用 `op_use_effect` **回读地块直到终态出现**再继续下一格——睡固定时长会打断上一格的挥动，造成"3 格一行必丢中间格"式假成功。工具描述要写明"什么时候用 + 注意事项"。
-- **部署**：本地开发用新二进制放 `release/vN/junimo-mcp.exe`（`release/` 已 gitignore、不入库），更新 `~/.workbuddy/mcp.json` 指向它；**重启 WorkBuddy 后连接器才加载新版**。对外分发走 GitHub Releases（README 有下载链接；`gh release create vX.Y.Z ...` 一条命令带校验和）。
+- **部署**：本地开发用新二进制放 `release/vN/junimo-mcp.exe`（`release/` 已 gitignore、不入库），更新 `~/.workbuddy/mcp.json` 指向它；**重启 WorkBuddy 后连接器才加载新版**。对外分发走 GitHub Releases（README 有下载链接）。
+- **发版格式（务必保持一致，别每个版本各写一套）**：
+  - tag = 标题 = `Junimo-MCP vX.Y.Z`（标题只放"名字+版本"，**描述性文案一律写进 release body**，不要塞进标题）；
+  - 资产文件名恒为 `junimo-mcp.exe` + `junimo-mcp.exe.sha256`（**不带版本号**，这样 `releases/latest/download/` 的固定链接永远有效）；
+  - 校验和内容格式 = `<hash>␣␣junimo-mcp.exe`（两个空格，不带 GNU 的 `*`）；
+  - 版本号同步点：`lib/mcp.ml` 的 `server_version`。
+  - 发布命令：
+    ```bash
+    bash build.sh release && cp release/junimo-mcp.exe release/v3/junimo-mcp.exe
+    (cd release/v3 && sha256sum junimo-mcp.exe | cut -d' ' -f1 | xargs -I{} printf '{}  junimo-mcp.exe\n') > release/v3/junimo-mcp.exe.sha256
+    gh release create vX.Y.Z release/v3/junimo-mcp.exe release/v3/junimo-mcp.exe.sha256 \
+      --title "Junimo-MCP vX.Y.Z" --notes-file <UTF8文件> --target main
+    ```
+  - 发完做**三重一致性**校验：本地 hash == `gh release view --json assets` 的 digest == 公开下载实测 hash。
+  - 中文 release notes 一律走文件（`--notes-file`），不要上命令行（编码会乱）。
 
 ## 参考
 

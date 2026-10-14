@@ -193,6 +193,8 @@ CI (GitHub Actions, ubuntu) se ejecuta en cada push / PR: compilación + pruebas
 | `STARDEW_HTTP` | `native` | Implementación HTTP: `native` (socket + keep-alive) / `curl` (respaldo) |
 | `STARDEW_HTTP_TIMEOUT` | `30` | Tiempo de espera por petición HTTP (segundos; súbelo para endpoints por lotes) |
 | `STARDEW_SETTLE` | adaptativo | Espera genérica de asentamiento: sin definir = adaptativo (400 ms, +150 al fallar / −50 tras 3 éxitos); `NNN` ms fijos; `fixed` = 550 ms clásico. El trabajo de campo (till/plant/water) ahora se regula por **verificación del efecto** e ignora esta opción |
+| `STARDEW_AUTO_MENU` | `1` | Cierra automáticamente los diálogos *sin opciones* (saludos de PNJ / cuadros informativos) antes de actuar; `=0` lo desactiva |
+| `STARDEW_AUTO_EVENT` | sin definir | `=1` hace que los eventos con guion se `skip` automáticamente; **desactivado por defecto** |
 | `STARDEW_WALK` | `walk` | Implementación de `go_to`: `walk` (por defecto — una petición para toda la ruta, con validación previa) / `move` (relé segmentado clásico, para diagnóstico) |
 | `STARDEW_AREA` | `auto` | Si `till`/`water` usan el endpoint de área cargada del mod: `auto` (se activa al **mejorar la herramienta**) / `force` / `off` |
 | `STARDEW_AREA_MIN` | `4` | Número mínimo de casillas afectadas para el lote |
@@ -206,7 +208,7 @@ CI (GitHub Actions, ubuntu) se ejecuta en cada push / PR: compilación + pruebas
 
 - **Capturas / vídeo no disponibles**: GDI no captura el fotograma OpenGL en esta máquina — la verificación se apoya en lecturas de la API del juego (más precisas, además).
 - **Movimiento de larga distancia**: el BFS del mod tiene un tope de 500 pasos; `go_to` lo sortea con tramos integrados (≤10 casillas por tramo). Para cruzar mapas usa `warp`.
-- **Los menús no avanzan solos**: cualquier acción que abra un menú (diálogo / tienda) se aborta con un informe; el agente lo gestiona explícitamente con `menu_read` / `menu_click`.
+- **Los menús ya no bloquean siempre**: antes de actuar, un diálogo *sin opciones* (saludo de un PNJ, agradecimiento tras un regalo, un cuadro informativo — donde pulsar confirmar es lo único posible, así que no se pierde nada) se **cierra automáticamente**; **las preguntas con opciones, las tiendas y los cofres nunca se responden por ti** — la acción falla rápido e informa del **texto y las opciones**, así que un solo `menu_click {"option":N}` lo resuelve (sin pasar antes por `menu_read`). Los eventos con guion **no** se saltan por defecto (`STARDEW_AUTO_EVENT=1` hace que los `skip`).
 - **Sesiones largas sin supervisión**: llama antes a `pause_time` para congelar el reloj (unos 12 minutos reales llevan el día del juego a las 2:00 y el personaje se desmaya, con una pérdida medida del 10% del oro); al terminar, `resume_time`.
 - **Compra remota**: el endpoint `/buy` del mod cobra ×2 el precio de venta (es un endpoint de conveniencia / depuración, sin interfaz de tienda).
 - **Sin «tiempo de mañana»**: solo hay clima del día actual (la línea de clima de `get_state`); «¿hoy / mañana es festival?» lo calcula un calendario integrado.

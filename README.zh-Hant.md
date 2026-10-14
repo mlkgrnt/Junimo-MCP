@@ -193,6 +193,8 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 自動執行：建置 + 單�
 | `STARDEW_HTTP` | `native` | HTTP 實作：`native`（原生 socket + keep-alive）/ `curl`（回退） |
 | `STARDEW_HTTP_TIMEOUT` | `30` | 單次 HTTP 呼叫逾時（秒；批次端點可調大） |
 | `STARDEW_SETTLE` | 自適應 | 通用動作結算等待：不設=自適應（400ms 起，失敗 +150 / 連續成功 −50）；`NNN` 固定毫秒；`fixed` = 舊行為 550ms。農活（till/plant/water）現在按**效果核驗**自訂步，不受此項影響 |
+| `STARDEW_AUTO_MENU` | `1` | 動作前自動按掉「無選項對話」（NPC 招呼 / 提示框）；`=0` 關閉（一律交回 Agent 處理） |
+| `STARDEW_AUTO_EVENT` | 未設 | `=1` 時劇情事件（過場）自動 `skip`；**預設不跳**（跳劇情是口味問題） |
 | `STARDEW_WALK` | `walk` | `go_to` 走位實作：`walk`（預設，一次請求走完全程，出發前校驗越界／門格／站不住）/ `move`（舊的分段接力，排查對照用） |
 | `STARDEW_AREA` | `auto` | `till`／`water` 是否走 mod 的批量蓄力端點：`auto`（**工具升級後**自動啟用）/ `force`（達格數門檻就啟用）/ `off`（一律逐格） |
 | `STARDEW_AREA_MIN` | `4` | 批量最少作用格數（低於此值逐格更可控） |
@@ -206,7 +208,7 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 自動執行：建置 + 單�
 
 - **截圖 / 錄影不可用**：本機 GDI 抓不到 OpenGL 畫面——驗證一律走遊戲內 API 讀數（比截圖更精確）。
 - **長距離移動**：mod 的 BFS 有 500 步上限，`go_to` 已內建分段接力（≤10 格/段）繞過；跨地圖請用 `warp`。
-- **選單不自動推進**：任何動作觸發選單（對話 / 商店）即中止並回報，由 Agent 明確 `menu_read` / `menu_click` 處理。
+- **選單／對話不再一律卡住**：動作前會**自動按掉「無選項對話」**（NPC 招呼、送禮答謝、提示框——按 confirm 是唯一能做的事，不丟資訊也不做選擇）；**帶選項的問題框、商店、箱子一律不代你回答**，會當場快速失敗並把**原文與選項**一起回報（直接 `menu_click {"option":N}` 一步處理，不必先 `menu_read`）。劇情事件預設**不跳**（`STARDEW_AUTO_EVENT=1` 可讓它自動 `skip`）。
 - **長時間掛機**：先 `pause_time` 凍結遊戲時鐘（現實約 12 分鐘，遊戲內就從早到 2:00 昏倒，實測會扣 10% 金幣），結束後 `resume_time`。
 - **遠端購買**：mod 的 `/buy` 端點按售價 ×2 計價（無商店介面的便利費 / 除錯端點）。
 - **無「明天天氣預報」**：只有當天天氣（`get_state` 的【天气】行）；「今天 / 明天是不是節日」由工具內建日曆計算。

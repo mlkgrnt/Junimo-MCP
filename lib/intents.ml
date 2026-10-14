@@ -45,19 +45,127 @@ let require_world () : Game_state.t =
   if not st.world_ready then failwith no_world_msg;
   st
 
-(* 动作前卫检：模态界面（对话/菜单）打开时，mod 的动作端点（/select /use …）会挂到
-   HTTP 超时才回（真机实测：读档问候对话开着时 till 的 /select 等了 30s）。
-   所以动作类工具先查一次状态，有菜单**立刻中止**——让 Agent 先处理菜单。 *)
-let require_no_menu () : unit =
+(* ---------- 模态界面：摘要 / 自动推进 / 富信息报错 ----------
+
+   动作前卫检：模态界面（对话/菜单/事件）打开时，mod 的动作端点（/select /use …）会挂到
+   HTTP 超时才回（真机实测：读档问候对话开着时 till 的 /select 等了 30s），而且**角色
+   根本无法移动**（真机压测：剧本事件弹对话时 go_to 连干等 25s）。
+
+   但"有菜单"里有一大类**不需要 Agent 决策**：NPC 招呼、送礼答谢、提示框——没有选项，
+   按 confirm 是唯一能做的事。于是这里分两档：
+     · 无选项对话 ⇒ 自动按 confirm 推进（`STARDEW_AUTO_MENU=0` 可关）；
+     · 剧本事件 ⇒ **默认不跳**（跳剧情是口味问题），`STARDEW_AUTO_EVENT=1` 才自动 skip；
+     · 带选项的问题框 / 商店 / 箱子 / 背包 ⇒ **永不自动动**，快速失败并把**内容与选项
+       一起回报**，让 Agent 一步就能处理（不必先 menu_read 再回来）。 *)
+
+(* 递归取「activeMenu.responses」里第 i 个选项的可读文本（真机是纯字符串列表，
+   mock/旧版可能是 {index,key,text} 对象）。 *)
+let menu_option_text (r : Yojson.Safe.t) : string =
+  match r with
+  | `String s -> s
+  | `Assoc _ ->
+      let t = Game_state.get_str r [ "text" ] in
+      if t <> "" then t else Game_state.to_str r
+  | other -> Game_state.to_str other
+
+let clip ?(n = 120) (s : string) =
+  if String.length s > n then String.sub s 0 n ^ "…" else s
+
+(* 菜单/对话框摘要：类型 + 说话人 + 原文 + 带序号的选项。 *)
+let menu_summary (st : Game_state.t) : string =
+  let j = st.raw in
+  let mtype = match st.active_menu with Some m -> m | None -> "菜单" in
+  let speaker = Game_state.get_str j [ "activeMenu"; "speaker" ] in
+  let text = Game_state.get_str j [ "activeMenu"; "dialogue" ] in
+  let opts =
+    match Game_state.get_in j [ "activeMenu"; "responses" ] with
+    | Some (`List l) ->
+        let items =
+          List.mapi
+            (fun i r -> Printf.sprintf "[%d] %s" i (clip ~n:40 (menu_option_text r)))
+            l
+        in
+        if items = [] then "" else "　可选项：" ^ String.concat " / " items
+    | _ -> ""
+  in
+  Printf.sprintf "%s%s%s%s" mtype
+    (if speaker = "" then "" else "（" ^ speaker ^ "）")
+    (if text = "" then "" else "：" ^ clip text)
+    opts
+
+(* 无选项对话：DialogueBox 且没有 responses —— 按 confirm 是唯一能做的事。 *)
+let is_plain_dialogue (st : Game_state.t) : bool =
+  let is_dlg =
+    match st.active_menu with
+    | Some m ->
+        m = "DialogueBox"
+        || (String.length m >= 8 && String.sub m 0 8 = "Dialogue")
+    | None -> false
+  in
+  let no_opts =
+    match Game_state.get_in st.raw [ "activeMenu"; "responses" ] with
+    | None | Some `Null | Some (`List []) -> true
+    | _ -> false
+  in
+  is_dlg && no_opts
+
+let event_skippable (st : Game_state.t) : bool =
+  match Game_state.get_in st.raw [ "activeEvent"; "skippable" ] with
+  | Some (`Bool b) -> b
+  | _ -> false
+
+(* 尝试自动清掉"不需要决策"的模态界面。返回 true = 现在没有菜单了。 *)
+let auto_clear_menu () : bool =
+  if not (Config.auto_menu ()) then false
+  else
+    let st0 = Game_state.fetch () in
+    if st0.active_menu = None then true
+    else begin
+      if Config.auto_event () && event_skippable st0 then begin
+        (try ignore (Game_api.key ~key:"skip" ()) with _ -> ());
+        Wait.sleep_ms 500
+      end;
+      (* 无选项对话：按 confirm 推进（最多 6 屏，防止事件连环对话把我们拖住） *)
+      let cleared = ref false and steps = ref 0 in
+      while (not !cleared) && !steps < 6 do
+        let st = Game_state.fetch () in
+        match st.active_menu with
+        | None -> cleared := true
+        | Some _ when is_plain_dialogue st ->
+            incr steps;
+            (try ignore (Game_api.key ~key:"confirm" ()) with _ -> ());
+            Wait.sleep_ms 350
+        | Some _ -> steps := 6 (* 要 Agent 决策的 ⇒ 立刻停手，一个键都不按 *)
+      done;
+      !cleared
+    end
+
+let menu_block_msg ?(what = "动作") (st : Game_state.t) : string =
+  let ev =
+    match Game_state.get_in st.raw [ "activeEvent"; "message" ] with
+    | Some (`String s) when s <> "" -> Printf.sprintf "（剧本事件进行中：「%s」）" (clip s)
+    | _ -> ""
+  in
+  Printf.sprintf
+    "当前有菜单/对话/事件打开（%s）%s，已中止%s——模态界面下动作会挂住、角色也不能移动。\
+     处理办法：带选项的用 menu_click {\"option\":N} 直接选；要看全貌用 menu_read；\
+     无选项的对话按 press_key confirm；剧本事件按 press_key skip（或设 STARDEW_AUTO_EVENT=1 \
+     让它自动跳过）。"
+    (menu_summary st) ev what
+
+(* 动作/走位前的模态界面卫检：能自动清的先自动清，清不掉再快速失败并说清要做什么。 *)
+let require_no_menu ?(what = "动作") () : unit =
   let st = require_world () in
   match st.active_menu with
-  | Some m ->
-      failwith
-        (Printf.sprintf
-           "当前有菜单/对话/事件打开（%s），已中止动作（模态界面下动作请求会挂住）。请先用 \
-            menu_read / menu_click 处理；对话按 press_key confirm，**剧本事件用 press_key skip** \
-            跳过后再执行。" m)
   | None -> ()
+  | Some _ ->
+      if auto_clear_menu () then ()
+      else begin
+        let st = Game_state.fetch () in
+        match st.active_menu with
+        | None -> ()
+        | Some _ -> failwith (menu_block_msg ~what st)
+      end
 
 (* schema 帮助 *)
 let p_int ?minimum ?maximum ?default desc =
@@ -419,17 +527,10 @@ let tool_go_to =
         let y = need_int args "y" in
         let timeout = float_of_int (get_int args "timeout" 60) in
         let st0 = require_world () in
-        (* 模态界面卫检：菜单/对话开着时角色**根本无法移动**（真机 2026-10-14 压测逮到：
-           live_v3 送礼后的对话框没关，go_to 连着 3 轮各干等 25s 才超时）。
-           与其干等，不如当场说清楚要关什么。 *)
-        (match st0.active_menu with
-        | Some m ->
-            failwith
-              (Printf.sprintf
-                 "当前有菜单/对话/事件打开（%s），角色无法移动，已中止走位。请先用 menu_read / \
-                  menu_click 处理；对话按 press_key confirm，**剧本事件用 press_key skip** 跳过后再走。"
-                 m)
-        | None -> ());
+        (* 模态界面卫检：菜单/对话开着时角色**根本无法移动**（真机压测逮到：送礼后的对话框
+           没关，go_to 连着 3 轮各干等 25s 才超时）。无选项对话会自动按掉再走；
+           带选项的当场快速失败并把选项一并回报。 *)
+        require_no_menu ~what:"走位" ();
         let x0, y0 =
           match st0.player with Some p -> (p.px, p.py) | None -> (0, 0)
         in

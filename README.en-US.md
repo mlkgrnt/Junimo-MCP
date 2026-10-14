@@ -193,6 +193,8 @@ CI (GitHub Actions, ubuntu) runs on every push / PR: build + unit tests + mock s
 | `STARDEW_HTTP` | `native` | HTTP implementation: `native` (socket + keep-alive) / `curl` (fallback) |
 | `STARDEW_HTTP_TIMEOUT` | `30` | Per-request HTTP timeout (seconds; raise it for batch endpoints) |
 | `STARDEW_SETTLE` | adaptive | Generic action settle wait: unset = adaptive (starts at 400ms, +150 on failure / −50 after 3 successes); `NNN` fixed ms; `fixed` = legacy 550ms. Farm work (till/plant/water) now paces itself by **effect verification** and ignores this |
+| `STARDEW_AUTO_MENU` | `1` | Auto-dismiss *plain* dialogues (NPC greetings / info boxes) before acting; `=0` turns it off (everything goes back to the agent) |
+| `STARDEW_AUTO_EVENT` | unset | `=1` makes scripted events (cutscenes) auto-`skip`; **off by default** |
 | `STARDEW_WALK` | `walk` | `go_to` implementation: `walk` (default — one request for the whole route, with pre-departure validation) / `move` (legacy segmented relay, for troubleshooting) |
 | `STARDEW_AREA` | `auto` | Whether `till`/`water` use the mod's charged-area endpoint: `auto` (enabled automatically once the **tool is upgraded**) / `force` / `off` |
 | `STARDEW_AREA_MIN` | `4` | Minimum number of affected cells for batching |
@@ -206,7 +208,7 @@ CI (GitHub Actions, ubuntu) runs on every push / PR: build + unit tests + mock s
 
 - **Screenshots / video are unavailable**: GDI can't capture the OpenGL frame on this machine — verification relies on in-game API readings (which are more precise anyway).
 - **Long-distance movement**: the mod's BFS has a 500-step cap; `go_to` works around it with built-in shuttling (≤10 tiles per leg). Use `warp` to cross maps.
-- **Menus don't auto-advance**: any action that opens a menu (dialogue / shop) aborts with a report; the agent handles it explicitly via `menu_read` / `menu_click`.
+- **Menus no longer always block you**: before acting, a *plain* dialogue (an NPC greeting, a thank-you after a gift, an info box — where pressing confirm is the only possible action, so nothing is lost) is **auto-dismissed**; **questions with options, shops and chests are never answered for you** — the action fails fast and reports the **text plus the options**, so a single `menu_click {"option":N}` resolves it (no `menu_read` round trip needed). Scripted events are **not** skipped by default (`STARDEW_AUTO_EVENT=1` makes it `skip` them).
 - **Long idle sessions**: call `pause_time` first to freeze the clock (about 12 real minutes takes the in-game day to 2:00 AM, passing out and — measured — costing 10% of your gold); call `resume_time` when done.
 - **Remote buying**: the mod's `/buy` endpoint charges ×2 the sale price (a convenience/debug endpoint without a shop UI).
 - **No "tomorrow's weather"**: only today's weather is available (the weather line in `get_state`); "is today / tomorrow a festival" is computed by a built-in calendar.
