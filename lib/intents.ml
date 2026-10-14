@@ -54,8 +54,9 @@ let require_no_menu () : unit =
   | Some m ->
       failwith
         (Printf.sprintf
-           "当前有菜单/对话打开（%s），已中止动作（模态界面下动作请求会挂住）。请先用 \
-            menu_read / menu_click / press_key 处理后再执行。" m)
+           "当前有菜单/对话/事件打开（%s），已中止动作（模态界面下动作请求会挂住）。请先用 \
+            menu_read / menu_click 处理；对话按 press_key confirm，**剧本事件用 press_key skip** \
+            跳过后再执行。" m)
   | None -> ()
 
 (* schema 帮助 *)
@@ -134,15 +135,30 @@ let snap_or_move ~(sx : int) ~(sy : int) : (unit, string) result =
     end
   end
 
-(* 把玩家精确站到 (tx,ty-1) 并面朝下。返回 Ok / Error 原因。 *)
+(* 把玩家精确站到 (tx,ty-1) 并面朝下。返回 Ok / Error 原因。
+   真机偶发（2026-10-14 live_m4，9 格里撞到 1 格）：/face 之后立刻 /use 会用到**旧朝向**——
+   走位刚结束时游戏的移动逻辑把朝向改回，/face 被覆盖 ⇒ 锄头挥到隔壁格（被 op_use 的
+   "命中格不符"抓到并如实报失败）。故转身后**轮询确认**（朝向=下 且 不再移动）再动手；
+   原生 HTTP 下单次轮询仅几毫秒，代价可忽略。确认不了就再补发一次 /face，仍不行则如实失败
+   （绝不带着错朝向挥下去）。 *)
 let stand_and_face (tx, ty) : (unit, string) result =
   let sx, sy = Farm.stand_pos (tx, ty) in
   match snap_or_move ~sx ~sy with
   | Error e -> Error e
   | Ok () ->
+      let facing_ready () =
+        match (Game_state.fetch ()).player with
+        | Some p -> p.facing = 2 && not p.is_moving
+        | None -> true
+      in
+      let confirm () = Wait.poll_until ~timeout:1.5 ~interval:0.03 facing_ready in
       ignore (Game_api.face ~direction:2 ());
-      Wait.sleep_ms 120;
-      Ok ()
+      if confirm () then Ok ()
+      else begin
+        ignore (Game_api.face ~direction:2 ());
+        if confirm () then Ok ()
+        else Error "转身未生效（朝向仍不是向下），已放弃该格（避免挥到隔壁格）"
+      end
 
 type op_outcome =
   | Op_ok
@@ -197,6 +213,40 @@ let tile_info ~(tx : int) ~(ty : int) : Yojson.Safe.t option =
     | _ -> None
   with _ -> None
 
+(* 效果核验式动作：/use 报 ok 之后，**轮询目标格直到终态真的出现**。
+
+   🚨 真机铁证（2026-10-14，确定性复现）：`/use` 的 Tool 分支只做
+   `BeginUsingTool(); EndUsingTool();` 就回 `ok:true`，而挥动的**生效帧在几百毫秒之后**。
+   我们原来是"回 ok 后睡固定时长（自适应 250~900ms）再动下一格"——只要那一睡短于生效帧，
+   紧接着的下一格 `/position`（瞬移）就会把未落地的挥动打断 ⇒ **效果落空、工具却已经记账**。
+   实测形态：一行 3 格浇过去，**每次都恰好丢中间那格**（首格 settle 较长、末格后面没有打断）。
+   这是标准的"假成功"，也是本项目最不能容忍的失败模式。
+
+   ⇒ 改为"等效果"而不是"睡固定时长"：轮询（本机一次请求仅几毫秒）到 expect 成立为止，
+   成立才继续下一格——下一格的动作因此永远不会打断上一格。轮询不到就重试一次
+   （重新站位转身再挥），仍不成立则**如实报失败**，绝不记账。 *)
+let op_use_effect ~tile:(tx, ty) ~(expect : Yojson.Safe.t -> bool)
+    ~(soft : string list) () : op_outcome =
+  let verify () =
+    match tile_info ~tx ~ty with Some t -> expect t | None -> false
+  in
+  let landed () = Wait.poll_until ~timeout:2.0 ~interval:0.03 verify in
+  match op_use ~tile:(tx, ty) ~soft () with
+  | Op_ok ->
+      if landed () then Op_ok
+      else begin
+        match stand_and_face (tx, ty) with
+        | Error why ->
+            Op_fail (Printf.sprintf "挥动已发出但地块未见变化；重试时无法就位：%s" why)
+        | Ok () -> (
+            match op_use ~tile:(tx, ty) ~soft () with
+            | Op_ok ->
+                if landed () then Op_ok
+                else Op_fail "挥动已发出但地块始终未见变化（重试后仍未生效）"
+            | other -> other)
+      end
+  | other -> other
+
 (* 对一组格子逐格执行 op：每格（卫检 → 站位 → 动作 → settle）。
    卫检失败中止整批；站位失败/动作失败都记录该格（带原因）继续。 *)
 let run_cells ~(op : int -> int -> op_outcome) (cells : (int * int) list) : exec_result =
@@ -235,16 +285,15 @@ let run_cells ~(op : int -> int -> op_outcome) (cells : (int * int) list) : exec
             | Ok () -> (
                 match op tx ty with
                 | Op_ok ->
+                    (* 不再睡固定时长：op 内部已用"轮询到终态出现"替代（见 op_use_effect），
+                       睡短了会打断上一格的挥动（真机铁证：一行 3 格必丢中间格）。 *)
                     Wait.adapt ~ok:true;
-                    Wait.settle ();
                     incr ok_n
                 | Op_skip _ ->
                     Wait.adapt ~ok:true;
-                    Wait.settle ();
                     incr skip_n
                 | Op_fail why ->
                     Wait.adapt ~ok:false;
-                    Wait.settle ();
                     failed := (tx, ty, why) :: !failed)
           with
          | Exit -> raise Exit
@@ -269,7 +318,7 @@ let run_cells ~(op : int -> int -> op_outcome) (cells : (int * int) list) : exec
     stop_reason = !stop_reason;
   }
 
-let render_exec_result ~what (r : exec_result) : string =
+let render_exec_result ?(notes = []) ~what (r : exec_result) : string =
   let b = Buffer.create 128 in
   Buffer.add_string b (Printf.sprintf "%s：成功 %d/%d 格" what r.ok_n r.total);
   if r.skip_n > 0 then
@@ -287,6 +336,7 @@ let render_exec_result ~what (r : exec_result) : string =
   (match r.stop_reason with
   | Some why -> Buffer.add_string b ("\n中止原因：" ^ why)
   | None -> ());
+  List.iter (fun n -> Buffer.add_string b ("\n" ^ n)) notes;
   Buffer.contents b
 
 (* ---------- 感知组 ---------- *)
@@ -350,53 +400,106 @@ let tool_go_to =
   {
     name = "go_to";
     description =
-      "走到指定格子（寻路移动，异步等待到达）。什么时候用：去田里、去某个物件旁。\
-       注意：可能被障碍阻挡而走不到，超时会自动停止并回报实际位置；\
+      "走到指定格子（寻路移动，等待到达后返回）。什么时候用：去田里、去某个物件旁。\
+       注意：可能被障碍阻挡而走不到（会自动改用逐段走位兜底），超时会自动停止并回报实际位置；\
+       目标越界/是大门或传送格/四周站不住时，会在**出发前**就被拒绝并说明原因；\
+       菜单/对话/事件开着时角色无法移动，会当场快速失败（对话按 confirm、剧本事件按 skip）；\
        若要精确站位做农活，通常不必先 go_to（农活工具自带站位）。";
     schema =
       obj_schema
         [
           ("x", p_int "目标格 x 坐标（必填）");
           ("y", p_int "目标格 y 坐标（必填）");
-          ("timeout", p_int ~minimum:1 ~maximum:120 ~default:30 "超时秒数，默认 30");
+          ("timeout", p_int ~minimum:1 ~maximum:180 ~default:60 "超时秒数，默认 60");
         ];
     with_strip = true;
     run =
       (fun args ->
         let x = need_int args "x" in
         let y = need_int args "y" in
-        let timeout = float_of_int (get_int args "timeout" (Config.timeout_secs ())) in
+        let timeout = float_of_int (get_int args "timeout" 60) in
         let st0 = require_world () in
+        (* 模态界面卫检：菜单/对话开着时角色**根本无法移动**（真机 2026-10-14 压测逮到：
+           live_v3 送礼后的对话框没关，go_to 连着 3 轮各干等 25s 才超时）。
+           与其干等，不如当场说清楚要关什么。 *)
+        (match st0.active_menu with
+        | Some m ->
+            failwith
+              (Printf.sprintf
+                 "当前有菜单/对话/事件打开（%s），角色无法移动，已中止走位。请先用 menu_read / \
+                  menu_click 处理；对话按 press_key confirm，**剧本事件用 press_key skip** 跳过后再走。"
+                 m)
+        | None -> ());
         let x0, y0 =
           match st0.player with Some p -> (p.px, p.py) | None -> (0, 0)
         in
+        let loc0 = st0.loc_name in
         let t1 = Unix.gettimeofday () in
-        let st, res = Wait.travel_to ~timeout ~x ~y () in
+        let elapsed () = Unix.gettimeofday () -. t1 in
+        let remaining () = max 3.0 (timeout -. elapsed ()) in
+        (* 优先 /walk_to：一次请求走全程，mod 内部寻路 + 出发前入口校验（越界 / 门格 /
+           站不住当场拒绝，不再"走一半才发现"）。
+           安全网：端点不可用（旧版 mod / 连接错误）**或**路线没按时走到（真机压测
+           328 次里 1 次 mod 路线卡在障碍后）→ 交回分段接力（M4 的老路）收尾。
+           先给 /walk_to 一半预算，剩下的留给接力，总预算仍是 timeout。 *)
+        let st, outcome =
+          if Config.walk_impl () = "move" then
+            let st, r = Wait.travel_to ~timeout ~x ~y () in
+            (st, `Legacy r)
+          else
+            let sub = max 2.0 (min 20.0 (timeout /. 2.)) in
+            match Wait.walk_to_and_wait ~timeout:sub ~loc:loc0 ~x ~y () with
+            | _, Wait.Walk_unavailable why ->
+                Config.info "go_to: /walk_to 不可用（%s）→ 回退分段接力" why;
+                let st, r = Wait.travel_to ~timeout:(remaining ()) ~x ~y () in
+                (st, `Legacy r)
+            | _, Wait.Walk_timeout ->
+                Config.info "go_to: /walk_to 未在 %.0fs 内到达 → 分段接力收尾" sub;
+                let st, r = Wait.travel_to ~timeout:(remaining ()) ~x ~y () in
+                (st, `Legacy r)
+            | _, Wait.Walk_stalled ->
+                Config.info "go_to: /walk_to 出发后没挪窝（目标多半被墙/水隔断）→ 分段接力判定";
+                let st, r = Wait.travel_to ~timeout:(remaining ()) ~x ~y () in
+                (st, `Legacy r)
+            | st, o -> (st, `Walk o)
+        in
         let dt = Unix.gettimeofday () -. t1 in
         let px, py =
           match st.player with Some p -> (p.px, p.py) | None -> (0, 0)
         in
-        (match res with
-        | Wait.Arrived ->
-            if px = x && py = y then
-              Printf.sprintf "已到达 (%d,%d)（从 (%d,%d) 出发，耗时 %.1fs）。" x y x0 y0 dt
-            else
-              Printf.sprintf
-                "已到达目标附近 (%d,%d)（目标 (%d,%d) 可能不可站立/被占用，停在邻格属正常；\
-                 从 (%d,%d) 出发，耗时 %.1fs）。"
-                px py x y x0 y0 dt
-        | Wait.No_path ->
+        let arrived () =
+          if px = x && py = y then
+            Printf.sprintf "已到达 (%d,%d)（从 (%d,%d) 出发，耗时 %.1fs）。" x y x0 y0
+              dt
+          else
+            Printf.sprintf
+              "已到达目标附近 (%d,%d)（目标 (%d,%d) 可能不可站立/被占用，停在邻格属正常；\
+               从 (%d,%d) 出发，耗时 %.1fs）。"
+              px py x y x0 y0 dt
+        in
+        (match outcome with
+        | `Walk Wait.Walked | `Legacy Wait.Arrived -> arrived ()
+        | `Walk (Wait.Walk_rejected why) ->
             failwith
               (Printf.sprintf
-                 "寻路失败：目标 (%d,%d) 不可达（已尝试分段接力；可能跨地图或被完全隔开）。\
-                  为避免直线穿墙乱走，已拒绝移动并停止。当前 (%d,%d)（地图 %s）。"
-                 x y px py st.loc_name)
-        | Wait.Timeout ->
+                 "拒绝走位：%s（未移动，仍在 (%d,%d)，地图 %s）。越界请改用地图内合法坐标；\
+                  门/传送格请改用 interact（进门）或 warp（跨图）。"
+                 why px py st.loc_name)
+        | `Walk (Wait.Walk_unavailable why) ->
+            failwith
+              (Printf.sprintf "走位失败：/walk_to 与分段接力都不可用（%s）。" why)
+        | `Walk Wait.Walk_timeout | `Walk Wait.Walk_stalled | `Legacy Wait.Timeout ->
             failwith
               (Printf.sprintf
                  "移动超时（%.0fs）：目标 (%d,%d)，实际停在 (%d,%d)。可能被障碍阻挡，可用 \
                   look 查看。已发送停止命令。"
-                 timeout x y px py)));
+                 timeout x y px py)
+        | `Legacy Wait.No_path ->
+            failwith
+              (Printf.sprintf
+                 "寻路失败：目标 (%d,%d) 不可达（已尝试分段接力；可能跨地图或被完全隔开）。\
+                  为避免直线穿墙乱走，已拒绝移动并停止。当前 (%d,%d)（地图 %s）。"
+                 x y px py st.loc_name)));
   }
 
 let tool_warp =
@@ -687,6 +790,166 @@ let tool_select_item =
 
 (* ---------- 农活组（复合编排） ---------- *)
 
+(* ---------- /tool_area 批量快路径（批次 3，2026-10-14） ----------
+
+   逐格路径每格要「站位→转身→挥动→结算」（约 0.55~0.9s/格），格数一多就线性堆积。
+   mod 的 `/tool_area` 用**真蓄力挥动**按矩形一次干完整片（自带补漏、壶空如实报、
+   设备避让），格数越多越划算。
+
+   但**升级等级 = 0 时批量毫无收益**（蓄力范围 1×1 ⇒ mod 每格生成一个锚点），
+   所以 auto 模式只在 `currentToolUpgrade ≥ 1` 且格数 ≥ 阈值时启用。
+   无论走哪条路，**成功与否都由我们独立回读核验**（不拿 mod 的回执当结论）。 *)
+
+(* 当前手持工具的升级等级（0=铜/基础，1=铜，2=钢，3=金，4=铱）。
+   Remix 的 /state 给 player.currentToolUpgrade；旧 mod 没这字段 → 0（= 不启用批量）。 *)
+let tool_upgrade_of (st : Game_state.t) : int =
+  Game_state.get_int st.raw [ "player"; "currentToolUpgrade" ]
+
+let area_enabled ~(cells : int) ~(upgrade : int) : bool =
+  match Config.area_impl () with
+  | "off" -> false
+  | "force" -> cells >= Config.area_min_cells ()
+  | _ -> upgrade >= 1 && cells >= Config.area_min_cells ()
+
+let tile_tilled (t : Yojson.Safe.t) =
+  Game_state.get_str t [ "terrain" ] = "HoeDirt"
+
+let tile_watered (t : Yojson.Safe.t) =
+  match Game_state.member "watered" t with Some (`Bool b) -> b | _ -> false
+
+(* 用 /tool_area 干完整片矩形，并**独立回读**核验。
+   返回 None ⇒ 本路径不可用 / 被 mod 拒绝（调用方回退逐格，行为与旧版一致）。
+   verify t = 目标终态是否已达成（till=已成 HoeDirt；water=已浇水）。 *)
+let run_area ~(operation : string) ~(cells : (int * int) list)
+    ~(verify : Yojson.Safe.t option -> bool) : (exec_result * string list) option
+    =
+  let xs = List.map fst cells and ys = List.map snd cells in
+  let x1 = List.fold_left min max_int xs and x2 = List.fold_left max min_int xs in
+  let y1 = List.fold_left min max_int ys and y2 = List.fold_left max min_int ys in
+  let select_tool () =
+    ignore
+      (Game_api.select
+         ~name:(if operation = "water" then "Watering Can" else "Hoe")
+         ())
+  in
+  let attempt () =
+    match
+      try Ok (Game_api.tool_area ~max_time:(Config.area_timeout ()) ~operation
+                ~x1 ~y1 ~x2 ~y2 ())
+      with e -> Error (Printexc.to_string e)
+    with
+    | Error e -> `Unavailable e
+    | Ok j ->
+        let ok =
+          match Game_state.member "ok" j with Some (`Bool b) -> b | _ -> false
+        in
+        if ok then `Done j
+        else
+          `Rejected
+            (match Game_state.member "error" j with
+            | Some v -> Game_state.to_str v
+            | None -> "未给原因")
+  in
+  select_tool ();
+  match attempt () with
+  | `Unavailable e ->
+      Config.info "tool_area 不可用（%s）→ 回退逐格" e;
+      None
+  | `Rejected why ->
+      Config.info "tool_area 被拒（%s）→ 回退逐格" why;
+      None
+  | `Done j ->
+      let out_of_water j =
+        match Game_state.member "out_of_water" j with
+        | Some (`Bool b) -> b
+        | _ -> false
+      in
+      (* 壶空 ⇒ 补满再浇一遍（mod 的矩形过滤只挑"还没浇的"，重浇幂等） *)
+      let j =
+        if out_of_water j && operation = "water" then begin
+          (try ignore (Game_api.refill ()) with _ -> ());
+          select_tool ();
+          match attempt () with `Done j2 -> j2 | _ -> j
+        end
+        else j
+      in
+      (* 独立回读：把玩家瞬移到矩形中心再 /surroundings 覆盖整片（不是信 mod 的回执） *)
+      let cx = (x1 + x2) / 2 and cy = (y1 + y2) / 2 in
+      (try ignore (Game_api.position ~x:cx ~y:cy ()) with _ -> ());
+      Wait.sleep_ms 150;
+      let radius =
+        max 1 (min 30 (max (((x2 - x1) / 2) + 1) (((y2 - y1) / 2) + 1)))
+      in
+      let tiles =
+        try
+          match Game_state.member "tiles" (Game_api.surroundings ~radius ()) with
+          | Some (`List ts) -> ts
+          | _ -> []
+        with _ -> []
+      in
+      let lookup x y =
+        List.find_opt
+          (fun t ->
+            Game_state.get_int t [ "x" ] = x && Game_state.get_int t [ "y" ] = y)
+          tiles
+      in
+      let still =
+        match Game_state.member "still_missing" j with
+        | Some (`List l) -> l
+        | _ -> []
+      in
+      let reason_of x y =
+        match
+          List.find_opt
+            (fun m ->
+              Game_state.get_int m [ "x" ] = x && Game_state.get_int m [ "y" ] = y)
+            still
+        with
+        | Some m -> Game_state.get_str m [ "reason" ]
+        | None -> ""
+      in
+      let ok_n = ref 0 and failed = ref [] in
+      List.iter
+        (fun (x, y) ->
+          if verify (lookup x y) then incr ok_n
+          else
+            let r = reason_of x y in
+            failed :=
+              (x, y, if r = "" then "批量后仍未达成目标状态" else "mod 报：" ^ r)
+              :: !failed)
+        cells;
+      (* 如实旁注：壶空、设备避让（mod 自己报的账，原样转述） *)
+      let notes = ref [] in
+      if out_of_water j then
+        notes :=
+          !notes
+          @ [ "注意：浇水过程中水壶耗尽，mod 中途停手；已尝试补满重浇，剩余未浇的格见上。" ];
+      (match Game_state.member "equipment_avoided" j with
+      | Some (`List l) when l <> [] ->
+          let names =
+            l
+            |> List.filter_map (fun e ->
+                   let what = Game_state.get_str e [ "what" ] in
+                   if what = "" then None else Some what)
+          in
+          notes :=
+            !notes
+            @ [
+                Printf.sprintf
+                  "注意：蓄力范围压到 %d 件设备，mod 已让开（未锄到设备上）%s。" (List.length l)
+                  (if names = [] then "" else "：" ^ String.concat "、" names);
+              ]
+      | _ -> ());
+      Some
+        ( {
+            total = List.length cells;
+            ok_n = !ok_n;
+            skip_n = 0;
+            failed = List.rev !failed;
+            stop_reason = None;
+          },
+          !notes )
+
 let tool_till =
   {
     name = "till";
@@ -694,7 +957,8 @@ let tool_till =
       "批量锄地：从起点 (x,y) 开始，按行数×长度锄一片地（自动站位、面朝、逐格执行）。\
        方向：horizontal（行沿 x 展开、逐行沿 y 推进）或 vertical（列沿 y 展开、逐列沿 x 推进）；\
        行序为蛇形（奇行反向），减少来回走动。什么时候用：开垦农田。\
-       注意：只对可锄的泥地有效；自动跳过无法就位的格子（会在结果里列出）；体力低于 15% 自动停止。";
+       注意：只对可锄的泥地有效；自动跳过无法就位的格子（会在结果里列出）；体力低于 15% 自动停止。\
+       锄头已升级（蓄力范围 >1 格）时，会自动改用蓄力批量（一次覆盖一片，明显更快）。";
     schema =
       obj_schema
         [
@@ -716,23 +980,42 @@ let tool_till =
         let cells = Farm.snake_cells ~start_x:x ~start_y:y ~rows ~length ~direction:dir () in
         (* 先选中锄头；/use 会做游戏侧校验（不可锄的格返回明确错误，而不是假成功） *)
         let _ = Game_api.select ~name:"Hoe" () in
-        let r =
-          run_cells
-            ~op:(fun tx ty ->
-              (* 不可锄的格上，mod 的 /use 会"空挥 + 假成功"（真机实测 2026-10-14：
-                 返回 ok:true + 目标格，但地块毫无变化、体力照扣）——故先按 /surroundings
-                 的 diggable 判一次；明确不可锄就直接记失败（不空挥，省体力）。 *)
-              match tile_info ~tx ~ty with
-              | Some t
-                when Game_state.member "diggable" t = None
-                     && Game_state.get_str t [ "terrain" ] <> "HoeDirt" ->
-                  Op_fail "该格不可锄（游戏侧无可耕地属性），已跳过"
-              | _ -> op_use ~tile:(tx, ty) ~soft:[ "Tile already tilled" ] ())
-            cells
+        let what = Printf.sprintf "锄地（起点(%d,%d)，%d行×%d格）" x y rows length in
+        (* 批量快路径：工具升级 ≥1（蓄力范围 >1 格）时一次干完整片；否则/失败则逐格。
+           体力低于 15% 时不用批量（逐格路径会在体力耗尽前主动停手）。 *)
+        let st_now = Game_state.fetch () in
+        let upgrade = tool_upgrade_of st_now in
+        let stamina_ok =
+          match st_now.player with
+          | Some p -> p.max_stamina <= 0.0 || p.stamina /. p.max_stamina >= 0.15
+          | None -> true
         in
-        render_exec_result
-          ~what:(Printf.sprintf "锄地（起点(%d,%d)，%d行×%d格）" x y rows length)
-          r);
+        let batch =
+          if stamina_ok && area_enabled ~cells:(List.length cells) ~upgrade then
+            run_area ~operation:"till" ~cells
+              ~verify:(function Some t -> tile_tilled t | None -> false)
+          else None
+        in
+        match batch with
+        | Some (r, notes) -> render_exec_result ~notes ~what:(what ^ "〔批量蓄力〕") r
+        | None ->
+            let r =
+              run_cells
+                ~op:(fun tx ty ->
+                  (* 不可锄的格上，mod 的 /use 会"空挥 + 假成功"（真机实测 2026-10-14：
+                     返回 ok:true + 目标格，但地块毫无变化、体力照扣）——故先按 /surroundings
+                     的 diggable 判一次；明确不可锄就直接记失败（不空挥，省体力）。 *)
+                  match tile_info ~tx ~ty with
+                  | Some t
+                    when Game_state.member "diggable" t = None
+                         && Game_state.get_str t [ "terrain" ] <> "HoeDirt" ->
+                      Op_fail "该格不可锄（游戏侧无可耕地属性），已跳过"
+                  | _ ->
+                      op_use_effect ~tile:(tx, ty) ~expect:tile_tilled
+                        ~soft:[ "Tile already tilled" ] ())
+                cells
+            in
+            render_exec_result ~what r);
   }
 
 let tool_plant =
@@ -768,7 +1051,11 @@ let tool_plant =
         let r =
           run_cells
             ~op:(fun tx ty ->
-              match op_use ~tile:(tx, ty) ~soft:[] () with
+              match
+                op_use_effect ~tile:(tx, ty)
+                  ~expect:(fun t -> Game_state.member "crop" t <> None)
+                  ~soft:[] ()
+              with
               | Op_fail why -> (
                   (* "Cannot place" 多为该格已有作物（重复播种）；反查确认后记软跳过 *)
                   match tile_info ~tx ~ty with
@@ -790,7 +1077,8 @@ let tool_water =
     description =
       "自动浇水：扫描半径内所有【种了作物且未浇水】的格子，逐格浇水（自动补水、自动站位）。\
        不需要手动指定坐标——工具自己找目标。什么时候用：每天给作物浇水时首选。\
-       注意：水壶空了会自动补满；体力低于 15% 自动停止；返回已浇格数。";
+       注意：水壶空了会自动补满；体力低于 15% 自动停止；返回已浇格数。\
+       水壶已升级（蓄力范围 >1 格）时会自动改用蓄力批量（一次覆盖一片，明显更快）。";
     schema =
       obj_schema
         [ ("radius", p_int ~minimum:1 ~maximum:30 ~default:15 "扫描半径（格），默认 15") ];
@@ -822,28 +1110,46 @@ let tool_water =
         else begin
           let _ = Game_api.refill () in
           let _ = Game_api.select ~name:"Watering Can" () in
-          let r =
-            run_cells
-              ~op:(fun tx ty ->
-                (* 水壶空则先补满（干活中途耗尽的情况） *)
-                (match
-                   List.find_opt
-                     (fun it -> it.Game_state.iname = "Watering Can")
-                     (Game_state.fetch ()).inventory
-                 with
-                | Some it -> (
-                    match it.water with
-                    | Some (left, _) when left <= 0 ->
-                        ignore (Game_api.refill ());
-                        ignore (Game_api.select ~name:"Watering Can" ())
-                    | _ -> ())
-                | None -> ());
-                op_use ~tile:(tx, ty) ~soft:[ "Already watered" ] ())
-              cells
+          let what = Printf.sprintf "浇水（自动扫描半径 %d）" radius in
+          (* 批量快路径：升级 ≥1 时一次浇完整片（mod 侧同样只挑"有作物且没浇的"格） *)
+          let st_now = Game_state.fetch () in
+          let upgrade = tool_upgrade_of st_now in
+          let stamina_ok =
+            match st_now.player with
+            | Some p -> p.max_stamina <= 0.0 || p.stamina /. p.max_stamina >= 0.15
+            | None -> true
           in
-          render_exec_result
-            ~what:(Printf.sprintf "浇水（自动扫描半径 %d）" radius)
-            r
+          let batch =
+            if stamina_ok && area_enabled ~cells:(List.length cells) ~upgrade then
+              run_area ~operation:"water" ~cells
+                ~verify:(function Some t -> tile_watered t | None -> false)
+            else None
+          in
+          match batch with
+          | Some (r, notes) ->
+              render_exec_result ~notes ~what:(what ^ "〔批量蓄力〕") r
+          | None ->
+              let r =
+                run_cells
+                  ~op:(fun tx ty ->
+                    (* 水壶空则先补满（干活中途耗尽的情况） *)
+                    (match
+                       List.find_opt
+                         (fun it -> it.Game_state.iname = "Watering Can")
+                         (Game_state.fetch ()).inventory
+                     with
+                    | Some it -> (
+                        match it.water with
+                        | Some (left, _) when left <= 0 ->
+                            ignore (Game_api.refill ());
+                            ignore (Game_api.select ~name:"Watering Can" ())
+                        | _ -> ())
+                    | None -> ());
+                    op_use_effect ~tile:(tx, ty) ~expect:tile_watered
+                      ~soft:[ "Already watered" ] ())
+                  cells
+              in
+              render_exec_result ~what r
         end);
   }
 

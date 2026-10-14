@@ -31,8 +31,8 @@ let menu () = Http_client.get_json (base () ^ "/menu") |> check
 
 (* ---------- 动作端点（M2 起使用；先放这里，测试覆盖时逐个打开） ---------- *)
 
-let post_ep path (body : Yojson.Safe.t) =
-  Http_client.post_json_json (base () ^ path) (Yojson.Safe.to_string body)
+let post_ep ?max_time path (body : Yojson.Safe.t) =
+  Http_client.post_json_json ?max_time (base () ^ path) (Yojson.Safe.to_string body)
   |> check
 
 let move ~x ~y () = post_ep "/move" (`Assoc [ ("x", `Int x); ("y", `Int y) ])
@@ -178,3 +178,39 @@ let festival_answer ~answer ?key () =
     @ (match key with Some k -> [ ("key", `String k) ] | None -> [])
   in
   post_ep "/festival/answer" (`Assoc fields)
+
+(* ---------- 批次 3 端点：批量农活 + 一次走全程（2026-10-14） ---------- *)
+
+(* POST /tool_area：矩形批量农活（**真蓄力挥动**，不直写地块）。
+   operation = "till" | "water"；矩形 (x1,y1)-(x2,y2) 含端点。
+   返回（成功路径）：
+     { ok, operation, swings, patches, still_missing:[{x,y,reason}],
+       out_of_water, equipment_avoided:[{x,y,what}],
+       anchors_skipped_by_equipment, anchors_moved_by_equipment, result:[...] }
+   ⚠️ **不做 check**：mod 用 {ok:false, error:"No diggable tiles nearby"} 这类
+   正常语义拒绝（矩形里没有目标格、没有对应工具），要和"真的出错"分开判读，
+   故原样回给调用方（同 /use 的处理）。连接层错误仍会抛出。 *)
+let tool_area ?max_time ~operation ~x1 ~y1 ~x2 ~y2 () =
+  Http_client.post_json_json ?max_time
+    (base () ^ "/tool_area")
+    (Yojson.Safe.to_string
+       (`Assoc
+         [
+           ("operation", `String operation);
+           ("x1", `Int x1); ("y1", `Int y1);
+           ("x2", `Int x2); ("y2", `Int y2);
+         ]))
+
+(* POST /walk_to：一次走全程（mod 内部寻路；跨图自动 warp 到入口再走）。
+   ⚠️ **发射后不管**：ok:true 只代表"路线已布好"，人还在走——完成要靠轮询坐标
+   （或 /alerts 的 walk_completed）。入口校验失败会回 {ok:false, error:"…"}
+   （越界 / 门格 / 站不住），**故不做 check**，由调用方转述成中文。
+   location 必须传**当前地图名**（不传会被当成跨图 → 找不到该图）。 *)
+let walk_to ~location ~x ~y ?(allow_water = false) ?(allow_warp = false) () =
+  let fields =
+    [ ("location", `String location); ("x", `Int x); ("y", `Int y) ]
+    @ (if allow_water then [ ("allowWater", `Bool true) ] else [])
+    @ (if allow_warp then [ ("allowWarp", `Bool true) ] else [])
+  in
+  Http_client.post_json_json (base () ^ "/walk_to")
+    (Yojson.Safe.to_string (`Assoc fields))

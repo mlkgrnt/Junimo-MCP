@@ -7,8 +7,9 @@
 A **hand-written OCaml** MCP server — a pair of working hands for AI agents in *Stardew Valley*: **35 intent tools** covering everything from tilling and harvesting to item pickup, meals, socializing, and festivals, executed reliably end to end.
 
 - **Protocol layer**: JSON-RPC 2.0 over stdio, implemented by hand (`initialize` / `tools/list` / `tools/call`), zero MCP framework dependencies
-- **Control layer**: curl subprocess → [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) over HTTP (default `http://localhost:7842`) → the in-game character
-- **No fake success**: a tool reporting success means it really happened in-game; most failures have no side effects (a failed gift is returned, a failed meal consumes nothing), so retrying is safe
+- **Control layer**: native HTTP with keep-alive (OCaml sockets) → [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) (default `http://localhost:7842`) → the in-game character
+- **No fake success**: a tool reporting success means it really happened in-game (after a swing or a watering it **reads the tile back until the effect has actually landed** before counting it); most failures have no side effects (a failed gift is returned, a failed meal consumes nothing), so retrying is safe
+- **Takes the fast path**: `go_to` covers the whole route in a single request (out-of-bounds, door/warp, and unreachable targets are rejected before departure); `till`/`water` switch to charged-area batching automatically once the tool is upgraded
 - **Minimal dependencies**: the only third-party OCaml library is yojson; **zero external runtime dependencies** (HTTP over native sockets — no system curl needed; `STARDEW_HTTP=curl` falls back)
 
 ## Don't want to develop it? Let an agent deploy it
@@ -191,7 +192,11 @@ CI (GitHub Actions, ubuntu) runs on every push / PR: build + unit tests + mock s
 | `STARDEW_API_URL` | `http://localhost:7842` | NagiBridge address (must be localhost) |
 | `STARDEW_HTTP` | `native` | HTTP implementation: `native` (socket + keep-alive) / `curl` (fallback) |
 | `STARDEW_HTTP_TIMEOUT` | `30` | Per-request HTTP timeout (seconds; raise it for batch endpoints) |
-| `STARDEW_SETTLE` | adaptive | Action settle wait: unset = adaptive (starts at 400ms, +150 on failure / −50 after 3 successes); `NNN` fixed ms; `fixed` = legacy 550ms |
+| `STARDEW_SETTLE` | adaptive | Generic action settle wait: unset = adaptive (starts at 400ms, +150 on failure / −50 after 3 successes); `NNN` fixed ms; `fixed` = legacy 550ms. Farm work (till/plant/water) now paces itself by **effect verification** and ignores this |
+| `STARDEW_WALK` | `walk` | `go_to` implementation: `walk` (default — one request for the whole route, with pre-departure validation) / `move` (legacy segmented relay, for troubleshooting) |
+| `STARDEW_AREA` | `auto` | Whether `till`/`water` use the mod's charged-area endpoint: `auto` (enabled automatically once the **tool is upgraded**) / `force` / `off` |
+| `STARDEW_AREA_MIN` | `4` | Minimum number of affected cells for batching |
+| `STARDEW_AREA_TIMEOUT` | `90` | Per-call wait limit for the batch endpoint (seconds) |
 | `STARDEW_TIMEOUT` | `30` | Overall polling timeout (seconds) |
 | `STARDEW_CURL` | auto-detected | Override the curl.exe path (only with `STARDEW_HTTP=curl`) |
 | `STARDEW_NO_STRIP` | unset | `=1` disables the trailing state strip |

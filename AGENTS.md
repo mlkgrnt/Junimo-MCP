@@ -215,8 +215,9 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 - **构建**：`bash build.sh build`（→ `_build/default/bin/main.exe`）；`bash build.sh runtest`（单测）；`bash build.sh release`（拷进 `release/`）。受管 Cygwin 环境走 `build.sh`（Windows 细节见 README）；标准 opam 环境直接用 `dune build` / `dune runtest`。
 - **测试四层**：单测（`dune runtest`）→ mock 冒烟（`python test/mock_smoke.py`，**不需要游戏**，114 项）→ 真机脚本（`test/live_*.py`，需要游戏在跑）→ 压测（`live_soak.py`）。
 - **改行为 → 必须同步测试**：新增/修改端点要同步改 `test/mock_nagibridge.py` + `test/mock_smoke.py` 断言；涉及真机语义的补 `test/live_*.py`。
-- **代码地图**：`lib/mcp.ml`（协议核心）/ `lib/intents.ml`（35 个工具实现与渲染，最大文件）/ `lib/game_api.ml`（端点封装）/ `lib/game_state.ml`（状态解析与中文渲染）/ `lib/wait.ml`（等待器 + 自适应结算）/ `lib/http_client.ml`（HTTP 层：原生 socket + keep-alive，唯一 IO；`STARDEW_HTTP=curl` 回退）。依赖极简：仅 `yojson`。
-- **纪律**：不发假成功（报成功必须在游戏里真发生；失败必须有可读中文原因）；工具描述要写明"什么时候用 + 注意事项"。
+- **代码地图**：`lib/mcp.ml`（协议核心）/ `lib/intents.ml`（35 个工具实现与渲染，最大文件；含**效果核验式动作** `op_use_effect`）/ `lib/game_api.ml`（端点封装）/ `lib/game_state.ml`（状态解析与中文渲染）/ `lib/wait.ml`（等待器 + 自适应结算 + `/walk_to` 到达轮询）/ `lib/http_client.ml`（HTTP 层：原生 socket + keep-alive，唯一 IO；`STARDEW_HTTP=curl` 回退）。依赖极简：仅 `yojson`。
+- **两条"快路径"（`till`/`water`/`go_to` 内部自动选，无需 Agent 关心）**：`go_to` 走 mod 的 `/walk_to`（一次请求走全程 + 出发前校验越界/门格/站不住；`STARDEW_WALK=move` 可回退旧的分段接力）；`till`/`water` 在**工具升级等级 ≥1** 且格数 ≥4 时走 mod 的 `/tool_area`（矩形蓄力批量；`STARDEW_AREA=off|force` 可强制切换，`STARDEW_AREA_TIMEOUT` 调等待上限）。
+- **纪律**：不发假成功（报成功必须在游戏里真发生；失败必须有可读中文原因）。⚠️ **挥动的生效帧在 `/use` 返回后约 550ms 才落**（真机实测）：所以农活动作一律用 `op_use_effect` **回读地块直到终态出现**再继续下一格——睡固定时长会打断上一格的挥动，造成"3 格一行必丢中间格"式假成功。工具描述要写明"什么时候用 + 注意事项"。
 - **部署**：本地开发用新二进制放 `release/vN/junimo-mcp.exe`（`release/` 已 gitignore、不入库），更新 `~/.workbuddy/mcp.json` 指向它；**重启 WorkBuddy 后连接器才加载新版**。对外分发走 GitHub Releases（README 有下载链接；`gh release create vX.Y.Z ...` 一条命令带校验和）。
 
 ## 参考

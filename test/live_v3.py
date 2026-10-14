@@ -179,6 +179,17 @@ def main():
         check("festival: 无活动 + 列出下个节日",
               (not e) and ("没有节日活动" in t) and ("【下一个节日】" in t), t)
 
+        # ---- 5.5) 收尾：关掉送礼留下的对话框 ----
+        # 送礼会弹出 NPC 的感谢对话（模态界面下**角色无法移动**）——留着会让后续
+        # go_to 干等到超时（2026-10-14 压测逮到）。这里按 confirm 直到没有菜单。
+        for _ in range(5):
+            if not raw_get("/state").get("activeMenu"):
+                break
+            c.call("press_key", {"key": "confirm"})
+            time.sleep(0.4)
+        left = raw_get("/state").get("activeMenu")
+        check("收尾: 无遗留菜单/对话", not left, str(left))
+
         # ---- 6) 回农场收尾 ----
         t, e = c.call("warp", {"location": "Farm"})
         check("warp 回农场", (not e) and ("已到达" in t), t)

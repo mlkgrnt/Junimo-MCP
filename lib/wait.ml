@@ -183,3 +183,82 @@ let travel_to ?(timeout = 90.0) ?(seg = 10) ~x ~y () : Game_state.t * move_resul
         end)
   done;
   match !outcome with Some r -> r | None -> (Game_state.fetch (), No_path)
+
+(* ---------- /walk_to：一次走全程（批次 3） ---------- *)
+
+type walk_outcome =
+  | Walked (* 已到达（同图、位置到位、且连续两次不在移动） *)
+  | Walk_timeout (* 超时仍没到（已 /stop） *)
+  | Walk_stalled
+      (* ⚠️ 出发后**一直没挪窝**（≥[stall] 秒）：mod 的 /walk_to 只校验"目标格本身
+         可站"，**不校验可达性** —— 目标在围墙另一侧 / 被水隔断时它照样回 ok:true
+         然后原地不动（真机 2026-10-14 压测抓到）。提前收手交给分段接力去判。 *)
+  | Walk_rejected of string
+      (* mod 入口校验拒绝：越界 / 门格 / 站不住——**这是有价值的终局**，别再走位 *)
+  | Walk_unavailable of string
+      (* 端点不可用或请求失败（旧版 mod、连接错误）⇒ 调用方回退到分段接力 *)
+
+(** 用 `/walk_to` 一次走全程并轮询到达。
+
+    loc = **当前地图名**（mod 靠它判"同图/跨图"；传空会被当成跨图而找不到图）。
+    到达判据与 [move_to] 同源：切比雪夫距离 ≤1 且连续 2 次 isMoving=false
+    （mod 是发射后不管的，只能靠轮询；请求本身只花几毫秒）。
+    [stall] = 连续多少秒"玩家一动没动"就认定路线不通、提前放手（默认 5s）。 *)
+let walk_to_and_wait ?(timeout = 60.0) ?(stall = 5.0) ~loc ~x ~y () :
+    Game_state.t * walk_outcome =
+  match
+    try Ok (Game_api.walk_to ~location:loc ~x ~y ())
+    with e -> Error (Printexc.to_string e)
+  with
+  | Error e -> (Game_state.fetch (), Walk_unavailable e)
+  | Ok j -> (
+      let ok =
+        match Game_state.member "ok" j with Some (`Bool b) -> b | _ -> false
+      in
+      if not ok then begin
+        let msg =
+          match Game_state.member "error" j with
+          | Some v -> Game_state.to_str v
+          | None -> "mod 拒绝该走位（未给原因）"
+        in
+        (Game_state.fetch (), Walk_rejected msg)
+      end
+      else begin
+        let t_start = Unix.gettimeofday () in
+        let last_pos = ref (-1, -1) in
+        let last_move = ref t_start in
+        let consecutive = ref 0 in
+        let outcome = ref None in
+        while !outcome = None do
+          (match (Game_state.fetch ()).player with
+          | Some p ->
+              if (p.px, p.py) <> !last_pos then begin
+                last_pos := (p.px, p.py);
+                last_move := Unix.gettimeofday ()
+              end;
+              let cheb = max (abs (p.px - x)) (abs (p.py - y)) in
+              if (not p.is_moving) && cheb <= 1 then begin
+                incr consecutive;
+                if !consecutive >= 2 then outcome := Some `Arrived
+              end
+              else consecutive := 0;
+              if !outcome = None then begin
+                let now = Unix.gettimeofday () in
+                if now -. t_start > timeout then outcome := Some `Timeout
+                else if now -. !last_move > stall then outcome := Some `Stalled
+              end
+          | None -> ());
+          if !outcome = None then sleep_ms 250
+        done;
+        let r =
+          match !outcome with
+          | Some `Arrived -> Walked
+          | Some `Stalled -> Walk_stalled
+          | _ -> Walk_timeout
+        in
+        if r = Walked then (Game_state.fetch (), Walked)
+        else begin
+          (try ignore (Game_api.stop ()) with _ -> ());
+          (Game_state.fetch (), r)
+        end
+      end)

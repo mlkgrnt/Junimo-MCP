@@ -7,8 +7,9 @@
 Un servidor MCP **escrito a mano en OCaml**: un par de manos trabajadoras para agentes de IA en *Stardew Valley* — **35 herramientas de intención**, desde labrar y cosechar hasta recoger objetos, comer, socializar y disfrutar de los festivales, con una ejecución fiable de principio a fin.
 
 - **Capa de protocolo**: JSON-RPC 2.0 sobre stdio, implementado a mano (`initialize` / `tools/list` / `tools/call`), sin dependencias de frameworks MCP
-- **Capa de control**: subproceso curl → [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) por HTTP (por defecto `http://localhost:7842`) → el personaje del juego
-- **Sin falsos éxitos**: si una herramienta informa de éxito, es que realmente ocurrió en el juego; la mayoría de los fallos no tienen efectos secundarios (los regalos fallidos se devuelven, comer fallido no consume nada), así que puedes reintentar sin miedo
+- **Capa de control**: HTTP nativo con keep-alive (sockets de OCaml) → [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) (por defecto `http://localhost:7842`) → el personaje del juego
+- **Sin falsos éxitos**: si una herramienta informa de éxito, es que realmente ocurrió en el juego (tras un golpe de herramienta o un riego, **relee la casilla hasta que el efecto se ha aplicado de verdad** antes de contabilizarlo); la mayoría de los fallos no tienen efectos secundarios (los regalos fallidos se devuelven, comer fallido no consume nada), así que puedes reintentar sin miedo
+- **Toma el camino rápido**: `go_to` cubre toda la ruta en una sola petición (los destinos fuera del mapa, en puertas/teletransportes o inalcanzables se rechazan antes de salir); `till`/`water` pasan automáticamente al lote con área cargada cuando la herramienta está mejorada
 - **Dependencias mínimas**: la única biblioteca OCaml de terceros es yojson; **cero dependencias externas en ejecución** (HTTP por sockets nativos, sin necesidad de curl del sistema; `STARDEW_HTTP=curl` como respaldo)
 
 ## ¿Solo quieres usarlo, no desarrollarlo? Deja que un agente lo despliegue
@@ -191,7 +192,11 @@ CI (GitHub Actions, ubuntu) se ejecuta en cada push / PR: compilación + pruebas
 | `STARDEW_API_URL` | `http://localhost:7842` | Dirección de NagiBridge (debe ser localhost) |
 | `STARDEW_HTTP` | `native` | Implementación HTTP: `native` (socket + keep-alive) / `curl` (respaldo) |
 | `STARDEW_HTTP_TIMEOUT` | `30` | Tiempo de espera por petición HTTP (segundos; súbelo para endpoints por lotes) |
-| `STARDEW_SETTLE` | adaptativo | Espera de asentamiento: sin definir = adaptativo (400 ms, +150 al fallar / −50 tras 3 éxitos); `NNN` ms fijos; `fixed` = 550 ms clásico |
+| `STARDEW_SETTLE` | adaptativo | Espera genérica de asentamiento: sin definir = adaptativo (400 ms, +150 al fallar / −50 tras 3 éxitos); `NNN` ms fijos; `fixed` = 550 ms clásico. El trabajo de campo (till/plant/water) ahora se regula por **verificación del efecto** e ignora esta opción |
+| `STARDEW_WALK` | `walk` | Implementación de `go_to`: `walk` (por defecto — una petición para toda la ruta, con validación previa) / `move` (relé segmentado clásico, para diagnóstico) |
+| `STARDEW_AREA` | `auto` | Si `till`/`water` usan el endpoint de área cargada del mod: `auto` (se activa al **mejorar la herramienta**) / `force` / `off` |
+| `STARDEW_AREA_MIN` | `4` | Número mínimo de casillas afectadas para el lote |
+| `STARDEW_AREA_TIMEOUT` | `90` | Límite de espera por llamada al endpoint de lote (segundos) |
 | `STARDEW_TIMEOUT` | `30` | Tiempo de espera total de sondeo (segundos) |
 | `STARDEW_CURL` | autodetectado | Sobrescribe la ruta de curl.exe (solo con `STARDEW_HTTP=curl`) |
 | `STARDEW_NO_STRIP` | sin definir | `=1` desactiva el resumen final de estado |

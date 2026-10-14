@@ -69,9 +69,11 @@ def mock_post(path, body):
 class Client:
     """通过 main.exe 的 stdio 说话（MCP 客户端仿真）。"""
 
-    def __init__(self):
+    def __init__(self, env_extra=None):
         env = dict(os.environ)
         env["STARDEW_API_URL"] = f"http://localhost:{PORT}"
+        if env_extra:
+            env.update({k: str(v) for k, v in env_extra.items()})
         self.p = subprocess.Popen(
             [EXE],
             stdin=subprocess.PIPE,
@@ -174,6 +176,17 @@ def run_chain(c):
     t, err = c.call("till", {"x": 3, "y": 2, "rows": 2, "length": 2})
     check("till 重跑: 4 格幂等跳过", (not err) and "另有 4 格已完成" in t, t)
 
+    # ---- 批量蓄力（/tool_area）：工具升级后自动启用（0 级时自动不启用）----
+    mock_post("/mock/set", {"toolUpgrade": 1})
+    t, err = c.call("till", {"x": 5, "y": 2, "rows": 2, "length": 2})
+    check("till(升级): 走蓄力批量", (not err) and "批量蓄力" in t and "成功 4/4" in t, t)
+    sur = mock_get("/surroundings?radius=25")
+    tile = next((tt for tt in sur["tiles"] if tt["x"] == 6 and tt["y"] == 3), None)
+    check("till(升级): (6,3) 成 HoeDirt", tile and tile.get("terrain") == "HoeDirt", str(tile))
+    mock_post("/mock/set", {"toolUpgrade": 0})
+    t, err = c.call("till", {"x": 5, "y": 2, "rows": 2, "length": 2})
+    check("till(0级): 不启用批量（逐格幂等）", (not err) and "批量蓄力" not in t, t)
+
     # ---- 播种 1x4 ----
     t, err = c.call("plant", {"seed": "Parsnip Seeds", "x": 3, "y": 4, "length": 4})
     check("plant: 成功 4/4", (not err) and "成功 4/4" in t, t)
@@ -196,6 +209,26 @@ def run_chain(c):
     check("water: 水壶有消耗", 0 < wc["waterLeft"] <= 40, str(wc))
     t, err = c.call("water", {"radius": 15})
     check("water 重跑: 无待浇作物", (not err) and "没有找到需要浇水的作物" in t, t)
+
+    # ---- 批量浇水（/tool_area water）：升级后自动启用；force 时 0 级也走 ----
+    mock_post("/mock/set", {"unwater": True})
+    mock_post("/mock/set", {"toolUpgrade": 1})
+    t, err = c.call("water", {"radius": 15})
+    # unwater 把 C 区（原本已浇）也一并清了 ⇒ 16 格（c4 + C4 + R4 + 新种4）都要浇
+    check("water(升级): 走蓄力批量", (not err) and "批量蓄力" in t and "成功 16/16" in t, t)
+    sur = mock_get("/surroundings?radius=25")
+    watered_now = {
+        (tt["x"], tt["y"]) for tt in sur["tiles"] if tt.get("watered") and tt.get("crop")
+    }
+    check("water(升级): 12 格全浇上", expect.issubset(watered_now), f"missing {expect - watered_now}")
+    c3 = Client(env_extra={"STARDEW_AREA": "force"})
+    try:
+        mock_post("/mock/set", {"unwater": True})
+        t, err = c3.call("water", {"radius": 15})
+        check("water(STARDEW_AREA=force): 0 级也走批量", (not err) and "批量蓄力" in t, t)
+    finally:
+        c3.close()
+    mock_post("/mock/set", {"toolUpgrade": 0})
 
     # ---- 收割 ----
     t, err = c.call("harvest", {"radius": 15})
@@ -238,21 +271,61 @@ def run_chain(c):
     t, err = c.call("warp", {"location": "Farm"})
     check("warp: 到 Farm", (not err) and "已到达" in t, t)
 
-    # ---- 长距分段导航（BFS 上限场景：长距直走失败但分段可达）----
+    # ---- 长距导航（/walk_to 一次走全程；真 mod 的 walk_to 无 BFS 步数上限）----
     mock_post("/mock/set", {"x": 1, "y": 1})
     mock_post("/mock/set", {"no_path_long": 22})
     t, err = c.call("go_to", {"x": 18, "y": 11})
-    check("go_to: 长距自动分段到达", (not err) and "已到达" in t, t)
+    check("go_to: 长距一次走完（/walk_to）", (not err) and "已到达" in t, t)
     st = mock_get("/state")
-    check("go_to: 分段后精确到达 (18,11)",
+    check("go_to: 精确到达 (18,11)",
           (st["player"]["x"], st["player"]["y"]) == (18, 11), st["player"])
     mock_post("/mock/set", {"no_path_long": 0})
 
-    # ---- 直线回退防护（全程寻路失败：分段接力也救不了 → 拒绝）----
+    # ---- /walk_to 入口校验（出发前拒绝，三类原因）----
+    mock_post("/mock/set", {"x": 5, "y": 5})
+    t, err = c.call("go_to", {"x": 99, "y": 5})
+    check("go_to: 越界当场拒绝", err and "拒绝走位" in t and "越界" in t, t)
+    mock_post("/mock/set", {"walk_door": True})
+    t, err = c.call("go_to", {"x": 6, "y": 5})
+    check("go_to: 门/传送格当场拒绝", err and "拒绝走位" in t and "门/传送格" in t, t)
+    mock_post("/mock/set", {"walk_door": False})
     mock_post("/mock/set", {"no_path": True})
-    t, err = c.call("go_to", {"x": 20, "y": 20})
-    check("go_to: 直线回退被拒绝（含分段接力）", err and "寻路失败" in t, t)
+    t, err = c.call("go_to", {"x": 6, "y": 5})
+    check("go_to: 四周站不住当场拒绝", err and "拒绝走位" in t and "站不住" in t, t)
     mock_post("/mock/set", {"no_path": False})
+
+    # ---- 强制回退：STARDEW_WALK=move 时仍走分段接力（老路兜底）----
+    c2 = Client(env_extra={"STARDEW_WALK": "move"})
+    try:
+        mock_post("/mock/set", {"x": 1, "y": 1})
+        mock_post("/mock/set", {"no_path_long": 22})
+        t, err = c2.call("go_to", {"x": 18, "y": 11})
+        check("go_to(move 模式): 分段接力仍可用", (not err) and "已到达" in t, t)
+        mock_post("/mock/set", {"no_path_long": 0})
+        mock_post("/mock/set", {"no_path": True})
+        t, err = c2.call("go_to", {"x": 20, "y": 11})
+        check("go_to(move 模式): 直线回退被拒绝", err and "寻路失败" in t, t)
+        mock_post("/mock/set", {"no_path": False})
+    finally:
+        c2.close()
+
+    # ---- /walk_to 卡住（出发后没挪窝）时由分段接力兜底 ----
+    # 真机 2026-10-14 压测抓到：mod 的 /walk_to 不校验"可达性"，目标被墙/水隔断时
+    # 照样回 ok:true 然后原地不动 ⇒ 停滞检测应在 ~5s 放手，交回接力判定。
+    mock_post("/mock/set", {"x": 1, "y": 1})
+    mock_post("/mock/set", {"walk_stall": True})
+    t, err = c.call("go_to", {"x": 10, "y": 6, "timeout": 14})
+    check("go_to: /walk_to 卡住时接力兜底", (not err) and "已到达" in t, t)
+    st = mock_get("/state")
+    check("go_to: 兜底后精确到达 (10,6)",
+          (st["player"]["x"], st["player"]["y"]) == (10, 6), st["player"])
+    mock_post("/mock/set", {"walk_stall": False})
+
+    # ---- 模态界面下 go_to 快速失败（不干等超时；对话/菜单开着时角色无法移动）----
+    mock_post("/mock/set", {"menu": "dialogue"})
+    t, err = c.call("go_to", {"x": 6, "y": 5})
+    check("go_to: 菜单开着时快速失败", err and "无法移动" in t, t)
+    mock_post("/mock/set", {"menu": None})
 
     # ---- 错误路径 ----
     mock_post("/mock/set", {"world": 0})

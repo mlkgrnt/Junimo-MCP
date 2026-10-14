@@ -46,7 +46,7 @@ def pick_step_target(px, py):
 def main():
     c = Client()
     t0 = time.time()
-    n_cycle = n_ops = n_err = 0
+    n_cycle = n_ops = n_err = n_unreach = 0
     lat = []
     curl_before = curl_count()
     while time.time() - t0 < RUN_MIN * 60:
@@ -68,15 +68,24 @@ def main():
         for name, err, txt in ops:
             n_ops += 1
             if err:
+                # 目标格是随机挑的，可能天然不可达（被墙/水隔断）。工具如实报
+                # "无路可走"是**正确行为**（不是稳定性问题）⇒ 单列，不计入错误。
+                if name == "go_to" and any(
+                    k in txt for k in ("寻路失败", "No path", "不可达", "拒绝走位", "站不住")
+                ):
+                    n_unreach += 1
+                    print(f"[cycle {n_cycle}] {name} 目标不可达（如实报错，不计错）: {txt[:120]}")
+                    continue
                 n_err += 1
                 print(f"[cycle {n_cycle}] {name} isError: {txt[:160]}")
         if n_cycle % 10 == 0:
-            print(f"... {n_cycle} 轮 / {n_ops} 次调用 / 错误 {n_err} / curl 进程 {curl_count()}")
+            print(f"... {n_cycle} 轮 / {n_ops} 次调用 / 错误 {n_err}"
+                  f" / 不可达 {n_unreach} / curl 进程 {curl_count()}")
     curl_after = curl_count()
     c.close()
     dt = time.time() - t0
     print("-" * 60)
-    print(f"SOAK: {dt:.0f}s, {n_cycle} 轮, {n_ops} 次工具调用, 错误 {n_err}")
+    print(f"SOAK: {dt:.0f}s, {n_cycle} 轮, {n_ops} 次工具调用, 错误 {n_err}, 目标不可达 {n_unreach}")
     print(f"每轮耗时: avg {sum(lat) / len(lat):.1f}s, max {max(lat):.1f}s")
     print(f"curl 子进程: 开始 {curl_before} → 结束 {curl_after}（应无增长 = 无泄漏）")
     ok = n_err == 0 and (curl_after < 0 or curl_after <= curl_before + 2)

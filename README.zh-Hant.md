@@ -7,8 +7,9 @@
 以 **OCaml 手寫**的 MCP 伺服器：給 AI Agent 一雙在《星露谷物語》裡幹活的手——**35 個意圖工具**，從種田採收到取物聚餐、社交過節，全流程可靠執行。
 
 - **協定層**：JSON-RPC 2.0 over stdio，手寫實作（`initialize` / `tools/list` / `tools/call`），零 MCP 框架相依
-- **控制層**：curl 子行程 → [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) HTTP（預設 `http://localhost:7842`）→ 遊戲內角色
-- **不假成功**：工具回報成功 = 遊戲裡真的發生了；失敗大多無副作用（送禮失敗自動退禮、吃東西失敗不扣物），可放心重試
+- **控制層**：原生 HTTP + keep-alive（OCaml socket）→ [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix)（預設 `http://localhost:7842`）→ 遊戲內角色
+- **不假成功**：工具回報成功 = 遊戲裡真的發生了（揮動／澆水後會**回讀地塊直到效果真的落地**才記帳）；失敗大多無副作用（送禮失敗自動退禮、吃東西失敗不扣物），可放心重試
+- **會挑快的路**：`go_to` 一次請求走完全程（出發前就先否掉越界／大門／站不住的座標）；`till`／`water` 在**工具已升級**時自動改用蓄力批量（一片地幾揮搞定）
 - **相依極簡**：唯一的第三方 OCaml 函式庫是 yojson；**執行零外部相依**（HTTP 走原生 socket，不需要系統 curl；`STARDEW_HTTP=curl` 可回退）
 
 ## 只想使用、不想開發？讓 Agent 一鍵部署
@@ -191,7 +192,11 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 自動執行：建置 + 單�
 | `STARDEW_API_URL` | `http://localhost:7842` | NagiBridge 位址（必須 localhost） |
 | `STARDEW_HTTP` | `native` | HTTP 實作：`native`（原生 socket + keep-alive）/ `curl`（回退） |
 | `STARDEW_HTTP_TIMEOUT` | `30` | 單次 HTTP 呼叫逾時（秒；批次端點可調大） |
-| `STARDEW_SETTLE` | 自適應 | 動作結算等待：不設=自適應（400ms 起，失敗 +150 / 連續成功 −50）；`NNN` 固定毫秒；`fixed` = 舊行為 550ms |
+| `STARDEW_SETTLE` | 自適應 | 通用動作結算等待：不設=自適應（400ms 起，失敗 +150 / 連續成功 −50）；`NNN` 固定毫秒；`fixed` = 舊行為 550ms。農活（till/plant/water）現在按**效果核驗**自訂步，不受此項影響 |
+| `STARDEW_WALK` | `walk` | `go_to` 走位實作：`walk`（預設，一次請求走完全程，出發前校驗越界／門格／站不住）/ `move`（舊的分段接力，排查對照用） |
+| `STARDEW_AREA` | `auto` | `till`／`water` 是否走 mod 的批量蓄力端點：`auto`（**工具升級後**自動啟用）/ `force`（達格數門檻就啟用）/ `off`（一律逐格） |
+| `STARDEW_AREA_MIN` | `4` | 批量最少作用格數（低於此值逐格更可控） |
+| `STARDEW_AREA_TIMEOUT` | `90` | 批量端點單次等待上限（秒） |
 | `STARDEW_TIMEOUT` | `30` | 輪詢總逾時（秒） |
 | `STARDEW_CURL` | 自動偵測 | curl.exe 路徑覆寫（僅 `STARDEW_HTTP=curl` 時用） |
 | `STARDEW_NO_STRIP` | 未設 | `=1` 關閉回傳文字末尾的狀態速報 |

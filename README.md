@@ -8,7 +8,8 @@
 
 - **协议层**：JSON-RPC 2.0 over stdio，手写实现（`initialize` / `tools/list` / `tools/call`），零 MCP 框架依赖
 - **控制层**：原生 HTTP + keep-alive（OCaml socket）→ [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix)（默认 `http://localhost:7842`）→ 游戏内角色
-- **不假成功**：工具报成功 = 游戏里真的发生了；失败大多无副作用（送礼失败自动退礼、吃失败不扣物），可放心重试
+- **不假成功**：工具报成功 = 游戏里真的发生了（挥动/浇水后会**回读地块直到效果真的落地**才记账）；失败大多无副作用（送礼失败自动退礼、吃失败不扣物），可放心重试
+- **会挑快的路**：`go_to` 一次请求走全程（出发前就否掉越界/大门/站不住的坐标）；`till`/`water` 在**工具已升级**时自动改用蓄力批量（一片地几挥搞定）
 - **依赖极简**：唯一第三方 OCaml 库是 yojson；**运行零外部依赖**（HTTP 走原生 socket，不需要系统 curl；`STARDEW_HTTP=curl` 可回退到旧路径）
 
 ## 只想用、不想开发？让 Agent 一键部署
@@ -191,7 +192,11 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 上自动跑：构建 + 单�
 | `STARDEW_API_URL` | `http://localhost:7842` | NagiBridge 地址（必须 localhost） |
 | `STARDEW_HTTP` | `native` | HTTP 实现：`native`（原生 socket + keep-alive）/ `curl`（回退，排查用） |
 | `STARDEW_HTTP_TIMEOUT` | `30` | 单次 HTTP 调用超时（秒；批量端点可调大） |
-| `STARDEW_SETTLE` | 自适应 | 动作结算等待：不设=自适应（400ms 起，失败 +150 / 连续成功 −50）；`NNN` 固定毫秒；`fixed` = 旧行为 550ms |
+| `STARDEW_SETTLE` | 自适应 | 通用动作结算等待：不设=自适应（400ms 起，失败 +150 / 连续成功 −50）；`NNN` 固定毫秒；`fixed` = 旧行为 550ms。农活（till/plant/water）现在按**效果核验**自定步，不受此项影响 |
+| `STARDEW_WALK` | `walk` | `go_to` 走位实现：`walk`（默认，一次请求走全程，出发前校验越界/门格/站不住）/ `move`（旧的分段接力，排查对照用） |
+| `STARDEW_AREA` | `auto` | `till`/`water` 是否走 mod 的批量蓄力端点：`auto`（**工具升级后**自动启用）/ `force`（达格数阈值就启用）/ `off`（一律逐格） |
+| `STARDEW_AREA_MIN` | `4` | 批量最少作用格数（低于此值逐格更可控） |
+| `STARDEW_AREA_TIMEOUT` | `90` | 批量端点单次等待上限（秒） |
 | `STARDEW_TIMEOUT` | `30` | 轮询总超时（秒） |
 | `STARDEW_CURL` | 自动探测 | curl.exe 路径覆盖（仅 `STARDEW_HTTP=curl` 时用） |
 | `STARDEW_NO_STRIP` | 未设 | `=1` 关闭返回文本末尾的状态速报 |

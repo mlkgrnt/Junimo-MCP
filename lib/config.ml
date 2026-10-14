@@ -8,6 +8,10 @@
     | STARDEW_HTTP | native                      | HTTP 实现：native / curl |
     | STARDEW_HTTP_TIMEOUT | 30                 | 单次 HTTP 调用超时（秒） |
     | STARDEW_SETTLE | 自适应                    | 结算等待；NNN 固定毫秒 / fixed=550 |
+    | STARDEW_WALK    | walk                     | go_to 实现：walk(/walk_to) / move(分段接力) |
+    | STARDEW_AREA    | auto                     | till/water 是否走 /tool_area 批量：auto/force/off |
+    | STARDEW_AREA_MIN| 4                        | /tool_area 最少作用格数（低于此值逐格） |
+    | STARDEW_AREA_TIMEOUT | 90                 | /tool_area 单次等待上限（秒） |
     | STARDEW_NO_STRIP| 未设                     | 设 1 关闭状态速报        |
     | STARDEW_LOG     | warn                     | stderr 日志 debug/info/warn |
 
@@ -76,6 +80,30 @@ let http_timeout () =
   | None -> 30
 
 let no_strip () = Sys.getenv_opt "STARDEW_NO_STRIP" = Some "1"
+
+(** go_to 的走位实现：walk（默认，`/walk_to` 一次走全程）/ move（旧的分段接力）。
+    `STARDEW_WALK=move` 回退到分段 `/move`（排查 / 对照用）。 *)
+let walk_impl () = String.lowercase_ascii (getenv "STARDEW_WALK" "walk")
+
+(** till/water 是否走 mod 的 `/tool_area` 批量端点：
+    - auto（默认）：仅当**工具升级等级 ≥1**（蓄力范围 >1 格）且目标格数 ≥ 阈值时启用；
+    - force：达到格数阈值就启用（也用于测试 / 用户明确想试）；
+    - off：一律逐格。
+    0 级工具 1 格/挥，批量没有收益（mod 会为每格生成一个锚点），故 auto 不启用。 *)
+let area_impl () = String.lowercase_ascii (getenv "STARDEW_AREA" "auto")
+
+(** /tool_area 最少作用格数（低于此值逐格更可控）。默认 4。 *)
+let area_min_cells () =
+  match Sys.getenv_opt "STARDEW_AREA_MIN" with
+  | Some v -> (match int_of_string_opt v with Some n when n > 0 -> n | _ -> 4)
+  | None -> 4
+
+(** /tool_area 单次等待上限（秒）。默认 90——mod 内部要逐锚点走位+蓄力，
+    地块大时可达数十秒（mod 自身最多等 10 分钟，我们不等那么久）。 *)
+let area_timeout () =
+  match Sys.getenv_opt "STARDEW_AREA_TIMEOUT" with
+  | Some v -> (match int_of_string_opt v with Some n when n > 0 -> n | _ -> 90)
+  | None -> 90
 
 let init () =
   current_level := level_of_string (String.lowercase_ascii (getenv "STARDEW_LOG" "warn"))

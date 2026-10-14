@@ -96,6 +96,7 @@ class World:
         self.stamina, self.max_stamina = 270.0, 270.0
         self.money = 1539
         self.current = "Hoe"
+        self.tool_upgrade = 0
         self.day = 13
         self.time_of_day = 610
         self.season = "spring"
@@ -176,6 +177,7 @@ class World:
                 "maxStamina": self.max_stamina,
                 "money": self.money,
                 "currentTool": self.current,
+                "currentToolUpgrade": self.tool_upgrade,
                 "facingDirection": self.facing,
                 "isMoving": self.is_moving(),
                 "fishing": None,
@@ -548,6 +550,119 @@ class World:
                 self.inv.append({"name": "Parsnip", "stack": count, "category": "作物"})
         return {"ok": True, "harvested": count}
 
+    # ---------- 批次 3：/walk_to 与 /tool_area ----------
+
+    def walk_to(self, body):
+        """仿真 POST /walk_to：入口校验（越界/门格/站不住）+ 发射后不管。
+
+        ⚠️ 与真 mod 一致：ok:true 只代表"路线布好了"，人还在走 —— 调用方必须轮询坐标。
+        与 /move 不同，真 mod 的 walk_to 内部寻路**没有 500 步上限**，故不受 no_path_long 影响。
+        """
+        self.need_world()
+        loc = body.get("location") or ""
+        if not loc:
+            # 不传 location 会被当成跨图 → 找不到该图（真 mod 行为）
+            return {"ok": False, "error": "Location '' not found"}
+        x = int(body.get("x", -1))
+        y = int(body.get("y", -1))
+        if x < 0 or y < 0:
+            x, y = self.px, self.py
+        if not (0 <= x < self.w and 0 <= y < self.h):
+            return {
+                "ok": False,
+                "error": f"目标 ({x},{y}) 越界：{loc} 只有 {self.w}x{self.h} 格"
+                f"（0..{self.w - 1}, 0..{self.h - 1}）",
+            }
+        if getattr(self, "walk_door", False):
+            return {
+                "ok": False,
+                "warp_tile": True,
+                "error": "那格是门/传送格（踩上去会换图）—— 要进门请用 interact；跨图请用 map ops=go",
+            }
+        if getattr(self, "no_path", False):
+            return {
+                "ok": False,
+                "error": f"目标 ({x},{y}) 及周围 8 圈都站不住（被墙/物体/牲畜堵死）",
+            }
+        if getattr(self, "walk_stall", False):
+            # 仿真真机偶发（328 次里 1 次）：路线布好了却走不动
+            # ⇒ 调用方应回退分段接力兜底，而不是干等超时
+            return {
+                "ok": True,
+                "action": "walk_to",
+                "destination": {"location": loc, "x": x, "y": y},
+                "segments": 1,
+            }
+        self.move_target = (x, y)
+        self.move_start = time.time()
+        return {
+            "ok": True,
+            "action": "walk_to",
+            "destination": {"location": loc, "x": x, "y": y},
+            "segments": 1,
+        }
+
+    def tool_area(self, body):
+        """仿真 POST /tool_area：矩形批量蓄力农活（真挥动语义，不直写地块）。"""
+        self.need_world()
+        op = body.get("operation")
+        if op not in ("water", "till"):
+            return {"ok": False, "error": "operation must be 'water' or 'till'"}
+        x1 = int(body.get("x1", -1))
+        y1 = int(body.get("y1", -1))
+        x2 = int(body.get("x2", -1))
+        y2 = int(body.get("y2", -1))
+        if min(x1, y1, x2, y2) < 0:
+            return {"ok": False, "error": "need rect x1/y1/x2/y2 or no target tiles"}
+        targets = []
+        for x in range(min(x1, x2), max(x1, x2) + 1):
+            for y in range(min(y1, y2), max(y1, y2) + 1):
+                t = self.tile_at(x, y)
+                if t is None:
+                    continue
+                if op == "till":
+                    # 真 mod 的 IsTillTarget：可耕 + 无物件/建筑（mock 里 object 就算占格）
+                    if t["kind"] == "diggable":
+                        targets.append((x, y))
+                else:
+                    # 真 mod 的 IsWaterTarget：有作物 + 还没浇
+                    if t["kind"] == "soil" and t.get("has_crop") and not t.get("watered"):
+                        targets.append((x, y))
+        if not targets:
+            what = "unwatered crops" if op == "water" else "diggable tiles"
+            return {"ok": False, "error": f"No {what} nearby"}
+        done = []
+        out_of_water = False
+        for x, y in targets:
+            if op == "till":
+                self.grid[y][x] = {"kind": "soil", "watered": False}
+                done.append((x, y))
+            else:
+                wc = next((it for it in self.inv if it["name"] == "Watering Can"), None)
+                if wc is None or wc.get("waterLeft", 0) <= 0:
+                    out_of_water = True
+                    continue
+                wc["waterLeft"] -= 1
+                self.grid[y][x]["watered"] = True
+                done.append((x, y))
+        still = [
+            {"x": x, "y": y, "reason": "water_short" if op == "water" else "blocked"}
+            for (x, y) in targets
+            if (x, y) not in done
+        ]
+        return {
+            "ok": True,
+            "operation": op,
+            "swings": len(targets),
+            "patches": 0,
+            "still_missing": still,
+            "out_of_water": out_of_water,
+            "equipment_avoided": [],
+            "anchors_skipped_by_equipment": 0,
+            "anchors_moved_by_equipment": 0,
+            "result": [],
+        }
+
     def menu_get(self):
         if self.menu is None:
             return {"ok": True, "open": False, "activeEvent": None}
@@ -827,6 +942,18 @@ class World:
             self.no_path = bool(body["no_path"])
         if "no_path_long" in body:
             self.no_path_long = int(body["no_path_long"])
+        if "toolUpgrade" in body:
+            self.tool_upgrade = int(body["toolUpgrade"])
+        if "walk_door" in body:
+            self.walk_door = bool(body["walk_door"])
+        if "walk_stall" in body:
+            self.walk_stall = bool(body["walk_stall"])
+        if "unwater" in body and body["unwater"]:
+            # 把所有作物的浇水状态清掉（测批量浇水用；真 mod 的 IsWaterTarget 只挑未浇作物）
+            for row in self.grid:
+                for t in row:
+                    if t.get("kind") == "soil":
+                        t["watered"] = False
         if "weather" in body:
             self.weather = int(body["weather"])
         if "festival" in body:
@@ -937,6 +1064,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/harvest":
                 radius = int(qs.get("radius", ["15"])[0])
                 return self._send(w.harvest(radius))
+            # 批次 3（2026-10-14）：一次走全程 + 矩形批量农活
+            if path == "/walk_to":
+                return self._send(w.walk_to(body))
+            if path == "/tool_area":
+                return self._send(w.tool_area(body))
             if path == "/menu":
                 return self._send(w.menu_get())
             if path == "/menu/click":
