@@ -50,24 +50,24 @@ def wait_status(timeout=120):
     return None
 
 
-def load_save():
-    """标题界面 → 自动进档（最多 3 次尝试）。
+def load_save(slot=0):
+    """标题界面 → 自动进档。
 
-    ⚠️ 坐标有两套（2026-10-14 改成窗口模式后）：
-      · 窗口模式 1280×720 UI：Load ≈ (517,609) → 存档槽 0 ≈ (538,120)
-      · 旧的无边框全屏 2560×1600：Load (1157,1489) → 存档槽 0 (1280,584)
-    两套都试，先窗口（当前启动偏好就是窗口模式）。
+    ⚠️ 三条真机经验（2026-10-15 全部实测踩过）：
+      1. **必须用 `/click`**，不能用 `/menu/click` —— 前者会先 `Game1.setMousePosition`
+         把光标挪到位；而标题页读的是**真实鼠标位置**（mod 的 `_MENUS_READING_REAL_MOUSE`
+         名单 2026-09-26 已清空），不挪光标就是"点了没反应"。
+      2. 存档格中心 = **(640, 129 + slot*166)** —— 由 `loadgamemenu.cs` 的布局公式推出
+         （xPos=uiW/2-582、yPos=uiH/2-332、每格高 height/4+4=166；1280×720 UI）。
+      3. Load 界面是 TitleMenu 的**内部 subMenu**，`/menu` 永远报 `TitleMenu`——别被它误导。
     """
-    coord_sets = [
-        ("窗口 1280×720", (517, 609), (538, 120)),
-        ("旧全屏 2560×1600", (1157, 1489), (1280, 584)),
-    ]
     for attempt in range(3):
-        label, load_xy, slot_xy = coord_sets[min(attempt, 1)]
-        print(f"→ 进档尝试 {attempt + 1}（{label}）: Load{load_xy} + 存档槽0{slot_xy}")
-        raw_post("/menu/click", {"x": load_xy[0], "y": load_xy[1]})
+        print(f"→ 进档尝试 {attempt + 1}: /click Load(517,609) + 存档槽{slot}(640,{129 + slot * 166})")
+        raw_post("/focus", {})
+        time.sleep(0.5)
+        raw_post("/click", {"x": 517, "y": 609})  # Load
         time.sleep(3.5)
-        raw_post("/menu/click", {"x": slot_xy[0], "y": slot_xy[1]})
+        raw_post("/click", {"x": 640, "y": 129 + slot * 166})  # 存档格
         t0 = time.time()
         while time.time() - t0 < 25:
             if raw_get("/status").get("worldReady"):
