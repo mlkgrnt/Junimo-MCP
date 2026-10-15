@@ -129,7 +129,7 @@ TOOLS_EXPECTED = [
     "get_state", "look", "get_inventory",
     "go_to", "warp", "face",
     "swing_tool", "use_held", "interact", "press_key",
-    "menu_read", "menu_click", "story",
+    "menu_read", "menu_click", "menu_close", "story",
     "select_item",
     "till", "plant", "water", "harvest",
     "sleep", "buy", "ship", "chest_read", "chest_store", "map_info",
@@ -149,7 +149,7 @@ def run_chain(c):
     )
     tl = c.request("tools/list")
     tools = tl.get("result", {}).get("tools", [])
-    check("tools/list: 共 36 个", len(tools) == 36, f"got {len(tools)}")
+    check("tools/list: 共 37 个", len(tools) == 37, f"got {len(tools)}")
     names = {t["name"] for t in tools}
     for n in TOOLS_EXPECTED:
         check(f"工具存在: {n}", n in names)
@@ -284,6 +284,14 @@ def run_chain(c):
         ce.close()
     mock_post("/mock/set", {"menu": None})
 
+    # ---- menu_close：关界面（睡完的 SaveGameMenu / 夜里的 ShippingMenu 靠它）----
+    t, err = c.call("menu_close")
+    check("menu_close: 无菜单时如实说", (not err) and "没有菜单" in t, t)
+    mock_post("/mock/set", {"menu": "dialogue"})
+    t, err = c.call("menu_close")
+    check("menu_close: 关掉对话", (not err) and "已关闭" in t, t)
+    check("menu_close: 真的没了", not mock_get("/state").get("activeMenu"), "还有菜单")
+
     # ---- 剧情：能感知 / 能读台词 / 能一屏一屏玩到结束 ----
     mock_post("/mock/set", {"event": "story"})
     t, err = c.call("get_state")
@@ -300,6 +308,11 @@ def run_chain(c):
           and "也可点 (640,558)" in t and "choose" in t, t)
     t, err = c.call("story", {"action": "choose"})
     check("story choose: 缺 option 如实报错", err and "需要 option" in t, t)
+    # 真机语义守护：剧情问题框上"只发默认那一下"是**关不掉框**的（mod 登记答案但不推进）
+    t, err = c.call("menu_click", {"option": 0})
+    check("真机语义: 单发默认 option 不关框",
+          (not err) and mock_get("/state").get("activeMenu") is not None, "框被关掉了")
+    # ⇒ 所以 story choose 必须自己补 real=true 那一发（下面这条通过就说明两段式生效）
     t, err = c.call("story", {"action": "choose", "option": 0})
     check("story choose: 选完剧情结束", (not err) and "已结束" in t, t)
     check("story: 事件已清空", mock_get("/state").get("activeEvent") is None, "还有事件")

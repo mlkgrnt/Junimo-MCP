@@ -128,6 +128,7 @@ class World:
         self.menu = None
         self.active_event = None
         self.story_idx = 0
+        self.pending_answer = None
         self.move_target = None
         self.move_start = 0.0
         # v3（Remix 仿真）：NPC / 好感 / 天气 / 节日活动
@@ -720,6 +721,14 @@ class World:
              "buttons": self.menu.get("buttons")}
         return m
 
+    def menu_close(self):
+        """关掉当前菜单（真机 /menu_close 语义：只关界面，不等于回答问题）。"""
+        if self.menu is None:
+            return {"ok": True, "closed": False, "reason": "no menu"}
+        t = self.menu.get("type", "Menu")
+        self.menu = None
+        return {"ok": True, "closed": True, "menu": t, "clearedCursor": 0, "dropped": None}
+
     def menu_click(self, body):
         if self.menu is None:
             return {"ok": False, "error": "No menu open"}
@@ -727,8 +736,19 @@ class World:
             # 回答剧情里的问题 ⇒ 整段事件结束（真机 event_answerDialogueQuestion 后走完剩余脚本，
             # mock 简化为"事件结束"）
             if self.active_event is not None:
-                self.active_event = None
-                self.story_idx = 0
+                # ⚠️ 真机语义（2026-10-15 实测）：剧情问题框上**默认点击只登记答案、不关框**，
+                #    事件也不推进；必须再来一发 `real=true`（mod 先设 selectedResponse 再真实点击）
+                #    才会关框。这里如实仿真，用来守住 story 的"两段式"兜底。
+                if body.get("real"):
+                    self.active_event = None
+                    self.story_idx = 0
+                    self.menu = None
+                    return {"ok": True, "clicked": "response", "option": int(body["option"]),
+                            "real": True}
+                self.pending_answer = int(body["option"])
+                return {"ok": True, "clicked": "response", "option": int(body["option"]),
+                        "key": "Yes" if int(body["option"]) == 0 else "No",
+                        "method": "event_answerDialogueQuestion"}
             self.menu = None
             return {"ok": True, "clicked": "response", "option": int(body["option"])}
         if "button" in body:
@@ -1168,6 +1188,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(w.menu_get())
             if path == "/menu/click":
                 return self._send(w.menu_click(body))
+            if path == "/menu_close":
+                return self._send(w.menu_close())
             # v3（Remix 仿真）
             if path == "/eat":
                 return self._send(w.eat(body))

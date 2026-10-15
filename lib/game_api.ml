@@ -102,6 +102,10 @@ let pause () = post_ep "/pause" (`Assoc [])
 
 let resume () = post_ep "/resume" (`Assoc [])
 
+(* 关掉当前菜单（mod 的 /menu_close）。⚠️ 该端点要 Content-Length，POST 时必须带 body
+   （我们的 post_ep 会发 `{}`，所以没问题；命令行 curl 得用 `-d ''`）。 *)
+let menu_close () = post_ep "/menu_close" (`Assoc [])
+
 let menu_click ?option ?button ?x ?y ?real () =
   let fields =
     (match option with Some v -> [ ("option", `Int v) ] | None -> [])

@@ -4,7 +4,7 @@
 
 [简体中文](README.md) · [繁體中文](README.zh-Hant.md) · [English](README.en-US.md) · **Español**
 
-Un servidor MCP **escrito a mano en OCaml**: un par de manos trabajadoras para agentes de IA en *Stardew Valley* — **36 herramientas de intención** (incluida la lectura de la historia), desde labrar y cosechar hasta recoger objetos, comer, socializar y disfrutar de los festivales, con una ejecución fiable de principio a fin.
+Un servidor MCP **escrito a mano en OCaml**: un par de manos trabajadoras para agentes de IA en *Stardew Valley* — **37 herramientas de intención** (incluida la lectura de la historia y el cierre de menús), desde labrar y cosechar hasta recoger objetos, comer, socializar y disfrutar de los festivales, con una ejecución fiable de principio a fin.
 
 - **Capa de protocolo**: JSON-RPC 2.0 sobre stdio, implementado a mano (`initialize` / `tools/list` / `tools/call`), sin dependencias de frameworks MCP
 - **Capa de control**: HTTP nativo con keep-alive (sockets de OCaml) → [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) (por defecto `http://localhost:7842`) → el personaje del juego
@@ -105,7 +105,7 @@ curl -sS --noproxy '*' http://localhost:7842/status
 
 > ⚠️ La dirección debe ser `http://localhost:7842`, **no `127.0.0.1`**: el HttpListener del mod solo registra el prefijo localhost, y 127.0.0.1 se rechaza con un 400 (comprobado en el juego real).
 
-## Lista de herramientas (36)
+## Lista de herramientas (37)
 
 | Grupo | Herramienta | Descripción |
 |---|---|---|
@@ -120,7 +120,8 @@ curl -sS --noproxy '*' http://localhost:7842/status
 | | `interact` | Interactuar con la casilla de enfrente (= tecla de confirmación); devuelve la información de esa casilla |
 | | `press_key` | Simular pulsaciones (confirm / cancel / números / direcciones…) |
 | Interfaz | `menu_read` | Leer el menú / diálogo / tienda / botones actuales |
-| | `story` | **Leer/avanzar la historia**: read la pantalla actual, next la siguiente, choose una respuesta, skip todo el evento |
+| | `story` | **Leer/avanzar la historia**: read la pantalla actual, next la siguiente, choose una respuesta (anade un clic real para que la eleccion se aplique), skip todo el evento |
+| | `menu_close` | Cerrar el menu/cuadro de texto actual (hace falta para el SaveGameMenu tras dormir y el ShippingMenu nocturno) |
 | | `menu_click` | Pulsar en el menú (índice de opción / nombre de botón / coordenadas) |
 | Objetos | `select_item` | Seleccionar un objeto del inventario para llevarlo en mano |
 | Tareas agrícolas | `till` | Labrar por lotes (movimiento en serpiente; idempotente: «ya labrado» se omite suavemente; se detiene por debajo del 15% de energía) |
@@ -210,6 +211,7 @@ CI (GitHub Actions, ubuntu) se ejecuta en cada push / PR: compilación + pruebas
 - **Capturas / vídeo no disponibles**: GDI no captura el fotograma OpenGL en esta máquina — la verificación se apoya en lecturas de la API del juego (más precisas, además).
 - **Movimiento de larga distancia**: el BFS del mod tiene un tope de 500 pasos; `go_to` lo sortea con tramos integrados (≤10 casillas por tramo). Para cruzar mapas usa `warp`.
 - **Los menús ya no bloquean siempre**: antes de actuar, un diálogo *sin opciones* (saludo de un PNJ, agradecimiento tras un regalo, un cuadro informativo — donde pulsar confirmar es lo único posible, así que no se pierde nada) se **cierra automáticamente**; **las preguntas con opciones, las tiendas y los cofres nunca se responden por ti** — la acción falla rápido e informa del **texto y las opciones**, así que un solo `menu_click {"option":N}` lo resuelve (sin pasar antes por `menu_read`). **Los eventos con guion (historia) nunca se cierran automáticamente** — son contenido y, una vez pasados, no vuelven; la herramienta `story` sirve precisamente para **jugarlos pantalla a pantalla** (read/next/choose), y `get_state` informa del evento en curso y de su línea actual. Para saltarlo usa `press_key skip` (sin repetición) o define `STARDEW_AUTO_EVENT=1`.
+- **Poner nombre a una mascota (NamingMenu) es un punto ciego del mod**: `/menu` no expone ni su caja de texto ni sus botones. La salida de las herramientas te dice que hacer: `menu_click {"x":800,"y":352}` acepta el nombre por defecto (verificado en 16:9), `press_key cancel` retrocede.
 - **Sesiones largas sin supervisión**: llama antes a `pause_time` para congelar el reloj (unos 12 minutos reales llevan el día del juego a las 2:00 y el personaje se desmaya, con una pérdida medida del 10% del oro); al terminar, `resume_time`.
 - **Compra remota**: el endpoint `/buy` del mod cobra ×2 el precio de venta (es un endpoint de conveniencia / depuración, sin interfaz de tienda).
 - **Sin «tiempo de mañana»**: solo hay clima del día actual (la línea de clima de `get_state`); «¿hoy / mañana es festival?» lo calcula un calendario integrado.
@@ -221,7 +223,7 @@ CI (GitHub Actions, ubuntu) se ejecuta en cada push / PR: compilación + pruebas
 
 | Documento | Para quién | Contenido |
 |---|---|---|
-| `AGENTS.md` *(chino simplificado)* | **Agentes de IA** | Despliegue + diez reglas de hierro + referencia de 36 herramientas + disciplina de desarrollo |
+| `AGENTS.md` *(chino simplificado)* | **Agentes de IA** | Despliegue + diez reglas de hierro + referencia de 37 herramientas + disciplina de desarrollo |
 | `README.md` / `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | Humanos | Chino simplificado (zh-Hans, predeterminado) / Chino tradicional / Inglés / Español (este archivo) |
 | `test/` | Desarrolladores | Suite de pruebas de cuatro capas |
 

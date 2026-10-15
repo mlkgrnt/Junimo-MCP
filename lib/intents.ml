@@ -316,10 +316,18 @@ let render_story ?(clicks = []) (v : story_view) : string =
            (if sk then "，可跳过" else "，不可跳过"))
   | None -> ());
   if not v.sv_is_dialogue then
-    Buffer.add_string b
-      (Printf.sprintf "【剧情】当前没有剧情/对话在进行%s\n"
-         (if v.sv_kind = "" then ""
-          else Printf.sprintf "（打开的是 %s，内容用 menu_read 看）" v.sv_kind))
+    if v.sv_kind = "NamingMenu" then
+      Buffer.add_string b
+        "【剧情】正在**给宠物起名**（NamingMenu）——mod 对它是盲区（`/menu` 不暴露文本框，\
+         按钮名也点不到）。办法：\n\
+         · 接受默认名字：`menu_click {\"x\":800,\"y\":352}`（16:9 / 1280×720 布局，真机实测\
+         这一步就让游戏认下名字、剧情继续；换名字目前得人来输入）；\n\
+         · 不想继续这个收养：`press_key cancel`（会退回上一个问题，不留痕迹）。"
+    else
+      Buffer.add_string b
+        (Printf.sprintf "【剧情】当前没有剧情/对话在进行%s\n"
+           (if v.sv_kind = "" then ""
+            else Printf.sprintf "（打开的是 %s，内容用 menu_read 看）" v.sv_kind))
   else begin
     if v.sv_line <> "" then
       Buffer.add_string b
@@ -1027,6 +1035,50 @@ let tool_menu_read =
         Game_state.render_menu j);
   }
 
+let tool_menu_close =
+  {
+    name = "menu_close";
+    description =
+      "关掉当前打开的菜单 / 文本框（等价游戏里按 Esc 或点关闭）。\
+       什么时候用：菜单挡住动作时（动作类工具遇到菜单会快速失败并说明）；\
+       睡完觉的 SaveGameMenu、夜间结算的 ShippingMenu 也会挂在屏幕上，**连续睡第二天前要先关**。\
+       注意：关的是**界面**，不等于回答了里面的问题——带选项的框请用 menu_click / story choose。";
+    schema = obj_schema [];
+    with_strip = false;
+    run =
+      (fun _ ->
+        let before =
+          match (Game_state.fetch ()).active_menu with Some m -> m | None -> ""
+        in
+        if before = "" then "当前没有菜单打开。"
+        else begin
+          let res = Game_api.menu_close () in
+          let closed =
+            match Game_state.member "closed" res with
+            | Some (`Bool b) -> b
+            | _ -> false
+          in
+          Wait.sleep_ms 250;
+          let still =
+            match (Game_state.fetch ()).active_menu with Some m -> m | None -> ""
+          in
+          if closed && still = "" then Printf.sprintf "已关闭菜单（%s）。" before
+          else if still = "" then Printf.sprintf "菜单（%s）已经不在了。" before
+          else begin
+            let why =
+              match Game_state.member "reason" res with
+              | Some v -> Game_state.to_str v
+              | None -> "未给原因"
+            in
+            Printf.sprintf
+              "没能关掉菜单（%s；mod 回：%s）。这类界面得按内容处理：menu_read 看内容，\
+               带选项的用 menu_click / story choose；NamingMenu 可用 menu_click {\"x\":800,\"y\":352} \
+               接受默认名字。"
+              still why
+          end
+        end);
+  }
+
 let tool_story =
   {
     name = "story";
@@ -1089,9 +1141,23 @@ let tool_story =
                 || v.sv_event <> before.sv_event
                 || v.sv_is_dialogue <> before.sv_is_dialogue
               in
-              (* ⚠️ **只按一次**。绝不在"没等到变化"时补按第二下——那会跳掉一屏台词，
+              (* ⚠️ 只按一次（next）。绝不在"没等到变化"时补按第二下——那会跳掉一屏台词，
                  而剧情是不可回放的（用户明确要求"想玩到剧情"）。等不到就如实报当前状态。 *)
-              ignore (Wait.poll_until ~timeout:3.0 ~interval:0.12 changed);
+              let landed = Wait.poll_until ~timeout:2.5 ~interval:0.12 changed in
+              (* 🎯 choose 的**两段式**（真机实测 2026-10-15，宠物领养事件）：
+                 默认路径把答案**登记**给游戏（mod 回包 ok / key="Yes"），但**不关问题框**、
+                 事件也不推进；紧接着补一发 `real=true`（mod 先设 selectedResponse 再真实点击）
+                 **才让框关掉**，游戏立刻推进到下一幕（"给宠物起名"）。
+                 ⇒ 默认没推进时自动补这一发。用户显式给了 real 就尊重他的选择，不自动补。 *)
+              if
+                (not landed) && action = "choose"
+                && not (get_bool args "real" false)
+              then begin
+                Config.info "story: 默认回答没推进 ⇒ 补一发 real=true 真实点击";
+                ignore
+                  (Game_api.menu_click ~option:(get_int args "option" (-1)) ~real:true ());
+                ignore (Wait.poll_until ~timeout:3.0 ~interval:0.15 changed)
+              end;
               let after = story_view (Game_state.fetch ()) in
               if (not after.sv_is_dialogue) && after.sv_event = None then
                 "剧情 / 对话已结束（上面那一屏就是最后一句）。"
@@ -1644,6 +1710,16 @@ let tool_sleep =
                "已发出睡觉（state=%s），但 150 秒内没有等到翻日。请用 get_state 确认当前状态。"
                state)
         else begin
+          (* 🧹 睡完常挂着 SaveGameMenu（有时还有夜间的 ShippingMenu），会把**下一次动作**
+             挡掉——实测连睡第二天会被"当前有菜单打开"直接拒。这里顺手关掉，
+             让"连翻多天"这种用法不用调用方自己操心。 *)
+          (match st.active_menu with
+          | Some m when m = "SaveGameMenu" || m = "ShippingMenu" ->
+              (try ignore (Game_api.menu_close ()) with _ -> ());
+              ignore
+                (Wait.poll_until ~timeout:3.0 ~interval:0.25 (fun () ->
+                     (Game_state.fetch ()).active_menu = None))
+          | _ -> ());
           let p_desc =
             match st.player with
             | Some p ->
@@ -2536,6 +2612,7 @@ let all : tool list =
     tool_menu_read;
     tool_story;
     tool_menu_click;
+    tool_menu_close;
     tool_select_item;
     tool_till;
     tool_plant;

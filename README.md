@@ -4,7 +4,7 @@
 
 **简体中文** · [繁體中文](README.zh-Hant.md) · [English](README.en-US.md) · [Español](README.es-ES.md)
 
-用 **OCaml 手写**的 MCP 服务器：给 AI Agent 一副在《星露谷物语》里干活的手——**36 个意图工具（含剧情阅读）**，从种地收割到取物聚餐、社交过节，全流程可靠执行。
+用 **OCaml 手写**的 MCP 服务器：给 AI Agent 一副在《星露谷物语》里干活的手——**37 个意图工具（含剧情阅读与菜单关闭）**，从种地收割到取物聚餐、社交过节，全流程可靠执行。
 
 - **协议层**：JSON-RPC 2.0 over stdio，手写实现（`initialize` / `tools/list` / `tools/call`），零 MCP 框架依赖
 - **控制层**：原生 HTTP + keep-alive（OCaml socket）→ [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix)（默认 `http://localhost:7842`）→ 游戏内角色
@@ -105,7 +105,7 @@ curl -sS --noproxy '*' http://localhost:7842/status
 
 > ⚠️ 地址必须用 `http://localhost:7842`，**不能用 `127.0.0.1`**——mod 的 HttpListener 只注册了 localhost 前缀，127.0.0.1 会被系统以 400 拒绝（实机实测）。
 
-## 工具清单（36）
+## 工具清单（37）
 
 | 组 | 工具 | 说明 |
 |---|---|---|
@@ -120,7 +120,8 @@ curl -sS --noproxy '*' http://localhost:7842/status
 | | `interact` | 与面前格交互（=确认键），返回面前格信息 |
 | | `press_key` | 模拟按键（confirm / cancel / 数字 / 方向…） |
 | 界面 | `menu_read` | 读当前菜单 / 对话 / 商店 / 按钮 |
-| | `story` | **读/推进剧情**：read 读当前一屏、next 下一屏、choose 选回答、skip 跳过整段 |
+| | `story` | **读/推进剧情**：read 读当前一屏、next 下一屏、choose 选回答（会自动补一发「真实点击」让选择落地）、skip 跳过整段 |
+| | `menu_close` | 关掉当前菜单/文本框（睡完的 SaveGameMenu、夜里的 ShippingMenu 靠它） |
 | | `menu_click` | 点菜单（选项 index / 按钮名 / 坐标） |
 | 物品 | `select_item` | 选中背包物品拿在手上 |
 | 农活 | `till` | 批量锄地（蛇形走位；幂等："已锄"记软跳过；体力 <15% 中止） |
@@ -210,6 +211,7 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 上自动跑：构建 + 单�
 - **截图 / 录像不可用**：本机 GDI 抓不到 OpenGL 画面——验证一律走游戏内 API 读数（比截图更精确）。
 - **长距移动**：mod 的 BFS 有 500 步上限，`go_to` 已内置分段接力（≤10 格/段）绕过；跨地图请用 `warp`。
 - **菜单/对话不再一律卡住**：动作前会**自动按掉"无选项对话"**（NPC 招呼、送礼答谢、提示框——按 confirm 是唯一能做的事，不丢信息也不做选择）；**带选项的问题框、商店、箱子一律不代你回答**，会当场快速失败并把**原文与选项**一起报回来（直接 `menu_click {"option":N}` 一步处理，不必先 `menu_read`）。**剧情（剧本事件）永不自动按掉**——那是内容，读了就没了；`story` 工具专门用来**一屏一屏读着玩**（read/next/choose），`get_state` 也会直接报出当前剧情与台词。想不看就 `press_key skip` 跳过整段（不可回放），或设 `STARDEW_AUTO_EVENT=1` 让它自动跳。
+- **给宠物起名（NamingMenu）是 mod 盲区**：`/menu` 不暴露它的文本框与按钮。工具输出里会直接给出办法——`menu_click {"x":800,"y":352}` 接受默认名字（16:9 布局实测有效），`press_key cancel` 则退回上一步。
 - **长时段挂机**：先 `pause_time` 冻结游戏时钟（现实 ~12 分钟游戏内就从早到 2:00 晕倒，实测会扣 10% 金币），结束 `resume_time`。
 - **远程购买**：mod 的 `/buy` 端点按售价 ×2 计价（无商店界面的便利费 / 调试端点）。
 - **无"明天天气预报"**：只有当天天气（`get_state` 的【天气】行）；"今天 / 明天是不是节日"由工具内置日历计算。
@@ -221,7 +223,7 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 上自动跑：构建 + 单�
 
 | 文档 | 给谁看 | 内容 |
 |---|---|---|
-| `AGENTS.md` | **AI Agent** | 部署安装 + 十条铁律 + 36 工具速查 + 开发纪律 |
+| `AGENTS.md` | **AI Agent** | 部署安装 + 十条铁律 + 37 工具速查 + 开发纪律 |
 | `README.md` | 人类 | 本文件（简体中文 zh-Hans） |
 | `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | 人类 | 繁中 / 英文 / 西语版本 |
 | `test/` | 开发者 | 四层测试套件 |
