@@ -50,30 +50,73 @@ def wait_status(timeout=120):
     return None
 
 
+def _save_slot_count():
+    """数一下本机有几个存档（用于判断"重试时再点 Load"安不安全）。读不出来返回 None。"""
+    try:
+        root = os.path.join(os.path.expandvars("%APPDATA%"), "StardewValley", "Saves")
+        return sum(
+            1
+            for n in os.listdir(root)
+            if os.path.isfile(os.path.join(root, n, "SaveGameInfo"))
+        )
+    except Exception:
+        return None
+
+
 def load_save(slot=0):
     """标题界面 → 自动进档。
 
-    ⚠️ 三条真机经验（2026-10-15 全部实测踩过）：
+    ⚠️ 真机经验（2026-10-15 全部实测踩过）：
+
       1. **必须用 `/click`**，不能用 `/menu/click` —— 前者会先 `Game1.setMousePosition`
          把光标挪到位；而标题页读的是**真实鼠标位置**（mod 的 `_MENUS_READING_REAL_MOUSE`
          名单 2026-09-26 已清空），不挪光标就是"点了没反应"。
-      2. 存档格中心 = **(640, 129 + slot*166)** —— 由 `loadgamemenu.cs` 的布局公式推出
+      2. 存档格中心 = **(640, 129 + slot*166)** —— 由 `loadgamemenu.cs` 布局公式推出
          （xPos=uiW/2-582、yPos=uiH/2-332、每格高 height/4+4=166；1280×720 UI）。
-      3. Load 界面是 TitleMenu 的**内部 subMenu**，`/menu` 永远报 `TitleMenu`——别被它误导。
+      3. Load 界面是 TitleMenu 的**内部 subMenu**，`/menu` 永远报 `TitleMenu`
+         —— **"界面开没开"根本观测不到**，所以只能"点完看效果"。
+      4. 🕐 **难点不是坐标而是时机**：`TitleMenu.receiveLeftClick` 开头就是
+         `if (logoFadeTimer > 0 || fadeFromWhiteTimer > 0 || transitioningCharacterCreationMenu) return;`
+         —— 在 logo 淡入期间点，会被**静默吞掉**；而 mod 的 `MenuBusyReason()`（"能不能点"
+         的探针 + 延后执行）**只认 JunimoNoteMenu / DialogueBox，不认 TitleMenu**
+         ⇒ 它以为能点、我们就吃到一次空点击。
+         ⇒ 外部唯一正确的形态：**排除时机（先等够）+ 效果验证 + 整轮重试**，不追求一发命中。
+         （正解在上游：把 TitleMenu 那几个闸门加进 `MenuBusyReason` 即可。）
+
+    额外安全措施：**重试时不再重复点 Load**——Load 界面已开时，那一发会落进存档格里
+    （≥4 个存档时可能点到别的档）。只有确认存档数 < 4 时才允许补点 Load；否则只重试格子
+    （点空格是无副作用的）。
     """
+    n_saves = _save_slot_count()
+    print(f"→ 进档：目标存档槽 {slot}（本机 {n_saves} 个存档）")
+    print("   先等 6 秒让标题 logo 淡入走完（排除时机，而不是掐时机）")
+    time.sleep(6.0)
+    print("   打开读档界面: /click Load(517,609)")
+    raw_post("/focus", {})
+    time.sleep(0.5)
+    raw_post("/click", {"x": 517, "y": 609})
+    time.sleep(3.5)
+
     for attempt in range(3):
-        print(f"→ 进档尝试 {attempt + 1}: /click Load(517,609) + 存档槽{slot}(640,{129 + slot * 166})")
-        raw_post("/focus", {})
-        time.sleep(0.5)
-        raw_post("/click", {"x": 517, "y": 609})  # Load
-        time.sleep(3.5)
-        raw_post("/click", {"x": 640, "y": 129 + slot * 166})  # 存档格
+        print(f"   第 {attempt + 1} 轮: /click 存档格 (640,{129 + slot * 166})")
+        raw_post("/click", {"x": 640, "y": 129 + slot * 166})
         t0 = time.time()
         while time.time() - t0 < 25:
             if raw_get("/status").get("worldReady"):
                 return True
             time.sleep(1.5)
-        time.sleep(1.0)
+
+        # 这一轮没进档 ⇒ 多半是 Load 界面压根没打开，得补点 Load。
+        # 但只有"补点不会误伤存档格"时才敢补：Load 界面若已开着，点 Load 的位置会落进
+        # 第 2/3 个存档格的矩形里（≥4 个存档时可能点到别的档）。存档 <4 时点到空格是无操作。
+        if n_saves is not None and n_saves >= 4:
+            print("   ⚠️ 本机存档 ≥4 个 —— 补点 Load 可能落进存档格，跳过补点，只重试格子")
+            continue
+        print("   补点 Load(517,609)（本机存档 <4，点到空格无副作用）")
+        raw_post("/focus", {})
+        time.sleep(0.5)
+        raw_post("/click", {"x": 517, "y": 609})
+        time.sleep(3.5)
     return False
 
 
