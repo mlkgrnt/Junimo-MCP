@@ -27,8 +27,16 @@ type tool = {
 let arg_int args k = match Game_state.member k args with Some v -> Some (Game_state.to_int v) | None -> None
 let arg_str args k = match Game_state.member k args with Some v -> Some (Game_state.to_str v) | None -> None
 
+let arg_bool args k =
+  match Game_state.member k args with
+  | Some (`Bool b) -> Some b
+  | Some (`String s) -> Some (String.lowercase_ascii s = "true" || s = "1")
+  | Some (`Int i) -> Some (i <> 0)
+  | _ -> None
+
 let get_int args k default = match arg_int args k with Some v -> v | None -> default
 let get_str args k default = match arg_str args k with Some v -> v | None -> default
+let get_bool args k default = match arg_bool args k with Some v -> v | None -> default
 
 let need_int args k =
   match arg_int args k with
@@ -249,6 +257,50 @@ let option_clicks () : (int * int) list =
     | _ -> []
   with _ -> []
 
+(* 🩹 真机 workaround（2026-10-15，源码级根因）：
+
+   mod 回答"剧情问题"时，把"谁在提问"猜成了
+   `Game1.currentLocation.isCharacterAtTile(Game1.player.GetGrabTile())`
+   —— 也就是**玩家面前那一格站着的角色**。而剧情里提问的 NPC 常常不在玩家正前方
+   ⇒ 这个参数是 null ⇒ 游戏侧把回答**静默丢弃**（mod 回包却看着成功：
+   ok:true / key:"No" / method:"event_answerDialogueQuestion"）。这就是"选项点了没反应"的根因
+   （同样也解释了为什么 option 点击 / 坐标点击 / menu_close / confirm 五条路全废：
+   坐标那条更早失败——`receiveLeftClick` 在 `selectedResponse==-1` 时会直接 return）。
+
+   对策：回答之前先**转身面朝最近的 NPC**，让"面前那一格"正好是她。纯字段设置、无副作用；
+   附近没有 NPC（半径 3 内）就原样不动。⚠️ 这只是**尽力而为**——NPC 若离得远，
+   `GetGrabTile()` 依然不指向她，那就还是选不了（要去掉这个上限得改上游 mod）。 *)
+let face_nearest_npc () : unit =
+  try
+    let sur = Game_api.surroundings ~radius:3 () in
+    match Game_state.member "npcs" sur with
+    | Some (`List l) when l <> [] -> (
+        match (Game_state.fetch ()).player with
+        | Some p ->
+            let cands =
+              List.filter_map
+                (fun n ->
+                  let x = Game_state.get_int n [ "x" ]
+                  and y = Game_state.get_int n [ "y" ] in
+                  let cheb = max (abs (x - p.px)) (abs (y - p.py)) in
+                  if cheb <= 0 || cheb > 3 then None else Some (cheb, x, y))
+                l
+            in
+            (match List.sort compare cands with
+            | (_, x, y) :: _ ->
+                let dx = x - p.px and dy = y - p.py in
+                let dir =
+                  if abs dx > abs dy then if dx > 0 then 1 else 3
+                  else if dy > 0 then 2
+                  else 0
+                in
+                ignore (Game_api.face ~direction:dir ());
+                Wait.sleep_ms 120
+            | [] -> ())
+        | None -> ())
+    | _ -> ()
+  with _ -> ()
+
 let render_story ?(clicks = []) (v : story_view) : string =
   let b = Buffer.create 256 in
   (match v.sv_event with
@@ -318,6 +370,14 @@ let p_str ?default desc =
   let fields =
     [ ("type", `String "string") ]
     @ (match default with Some d -> [ ("default", `String d) ] | None -> [])
+    @ [ ("description", `String desc) ]
+  in
+  `Assoc fields
+
+let p_bool ?default desc =
+  let fields =
+    [ ("type", `String "boolean") ]
+    @ (match default with Some d -> [ ("default", `Bool d) ] | None -> [])
     @ [ ("description", `String desc) ]
   in
   `Assoc fields
@@ -980,6 +1040,10 @@ let tool_story =
               "read（只读当前屏）/ next（推进一屏）/ choose（需 option）/ skip（跳过整段）"
           );
           ("option", p_int ~minimum:0 "choose 时的选项序号（从 0 开始）");
+          ( "real",
+            p_bool
+              "choose 时走 mod 的真实点击路径（默认 false）。仅当默认路径点了没反应时再试；\
+               对**剧本事件**的对话它可能「关掉框但不认选择」，慎用" );
         ];
     with_strip = false;
     run =
@@ -1003,8 +1067,12 @@ let tool_story =
                     failwith
                       "choose 需要 option（选项序号，从 0 开始）——先 story action=read 看有哪几个选项。"
                   else begin
-                    ignore (Game_api.menu_click ~option:opt ());
-                    Printf.eprintf "[junimo-mcp] story: 选了选项 %d\n%!" opt
+                    (* 🩹 先转身面朝最近 NPC —— mod 把"提问者"猜成玩家面前那一格的角色，
+                       不转身的话它拿到 null、游戏侧静默丢弃我们的回答（详见 face_nearest_npc）。 *)
+                    face_nearest_npc ();
+                    let use_real = get_bool args "real" false in
+                    ignore (Game_api.menu_click ~option:opt ~real:use_real ());
+                    Printf.eprintf "[junimo-mcp] story: 选了选项 %d（real=%b）\n%!" opt use_real
                   end
               | _ -> ignore (Game_api.key ~key:"confirm" ()));
               (* 等界面真的换屏：台词变了 / 选项变了 / 事件结束 / 对话关掉。 *)
@@ -1029,10 +1097,13 @@ let tool_story =
                   if after.sv_options = [] then [] else option_clicks ()
                 in
                 (if action = "choose" then
-                   "⚠️ 选项似乎没被接受：真机上**剧本事件的问题框**有这个缺陷 —— mod 的 \
-                    answer 接口回包说登记了答案，但对话框不关、事件也不推进（2026-10-15 实测：\
-                    option 点击 / 按 bounds 点坐标 / menu_close / confirm 都不动）。\n\
-                    可以再试 menu_click 按坐标点；都不行就用 story action=skip 跳过整段。\n"
+                   "⚠️ 选项似乎没被接受。已知根因：mod 回答剧情问题时，把「谁在提问」猜成了\
+                    玩家面前那一格的角色（`isCharacterAtTile(player.GetGrabTile())`）——剧情里\
+                    提问的 NPC 常不在正前方 ⇒ 参数为 null ⇒ 游戏侧**静默丢弃**这次回答（mod 回包\
+                    却看着成功）。本工具已先试着转身面朝最近的 NPC。\n\
+                    还可以试：① 用 menu_click 按坐标点；② story action=choose 加 real=true（走\
+                    mod 的真实点击路径，但对剧本事件可能「关掉框、不认选择」）；③ 都不行就\
+                    story action=skip 跳过整段。\n"
                  else "这一屏似乎没有变化（多半是过场画面/正在播动画），再 next 一次通常就过去了。\n")
                 ^ render_story ~clicks after
               else begin
@@ -1072,6 +1143,10 @@ let tool_menu_click =
           ("button", p_str "按钮名（ok/cancel/back/close 等）");
           ("x", p_int "点击坐标 x（需同时给 y）");
           ("y", p_int "点击坐标 y（需同时给 x）");
+          ( "real",
+            p_bool
+              "对话选项走 mod 的真实点击路径（默认 false，走 Event.answerDialogueQuestion）。\
+               剧本事件的问题框若默认点了没反应可试 true——但脚本可能不认这次选择，慎用" );
         ];
     with_strip = true;
     run =
@@ -1080,9 +1155,10 @@ let tool_menu_click =
         let button = arg_str args "button" in
         let x = arg_int args "x" in
         let y = arg_int args "y" in
+        let real = arg_bool args "real" in
         if option = None && button = None && not (x <> None && y <> None) then
           failwith "至少提供 option / button / x+y 之一作为点击目标";
-        let res = Game_api.menu_click ?option ?button ?x ?y () in
+        let res = Game_api.menu_click ?option ?button ?x ?y ?real () in
         Wait.settle ();
         let clicked =
           match Game_state.member "clicked" res with

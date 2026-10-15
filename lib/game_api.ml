@@ -102,12 +102,16 @@ let pause () = post_ep "/pause" (`Assoc [])
 
 let resume () = post_ep "/resume" (`Assoc [])
 
-let menu_click ?option ?button ?x ?y () =
+let menu_click ?option ?button ?x ?y ?real () =
   let fields =
     (match option with Some v -> [ ("option", `Int v) ] | None -> [])
     @ (match button with Some v -> [ ("button", `String v) ] | None -> [])
     @ (match x with Some v -> [ ("x", `Int v) ] | None -> [])
     @ (match y with Some v -> [ ("y", `Int v) ] | None -> [])
+    (* mod 的 real=true：对话选项走**真实 receiveLeftClick**（先设 selectedResponse 再点），
+       跳过 `Event.answerDialogueQuestion`。mod 注释说这是给 `createQuestionDialogue`
+       那类（跳舞邀请、克林特菜单）用的；对**剧本事件**的对话它会"关掉框但不认选择"。 *)
+    @ (match real with Some v -> [ ("real", `Bool v) ] | None -> [])
   in
   post_ep "/menu/click" (`Assoc fields)
 
