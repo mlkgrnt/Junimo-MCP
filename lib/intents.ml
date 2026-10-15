@@ -268,8 +268,14 @@ let option_clicks () : (int * int) list =
    坐标那条更早失败——`receiveLeftClick` 在 `selectedResponse==-1` 时会直接 return）。
 
    对策：回答之前先**转身面朝最近的 NPC**，让"面前那一格"正好是她。纯字段设置、无副作用；
-   附近没有 NPC（半径 3 内）就原样不动。⚠️ 这只是**尽力而为**——NPC 若离得远，
-   `GetGrabTile()` 依然不指向她，那就还是选不了（要去掉这个上限得改上游 mod）。 *)
+   附近没有 NPC（半径 3 内）就原样不动。
+
+   ⚠️ **真机实测（2026-10-15）：对宠物领养事件无效** —— 提问的那一刻，整个农场
+   **一个 NPC 都没有**（`/state` 与 `/surroundings?radius=20` 的 npcs 都是空数组；
+   事件的说话者是临时 actor，不在 location.characters 里）。**没有"谁在提问"这个对象**，
+   所以 `answerDialogueQuestion(null, key)` 永远被丢，转身/挪位都救不了。
+   这个 workaround 只可能在"提问的 NPC 确实站在玩家正前方"的事件里派上用场 —— 那一类
+   尚未取得实例验证，**别当成已修**。要真修得上游 mod 改用事件自己的说话人。 *)
 let face_nearest_npc () : unit =
   try
     let sur = Game_api.surroundings ~radius:3 () in
