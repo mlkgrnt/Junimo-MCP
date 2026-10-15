@@ -51,12 +51,23 @@ def wait_status(timeout=120):
 
 
 def load_save():
-    """标题界面 → 自动进档（最多 3 次尝试）。"""
+    """标题界面 → 自动进档（最多 3 次尝试）。
+
+    ⚠️ 坐标有两套（2026-10-14 改成窗口模式后）：
+      · 窗口模式 1280×720 UI：Load ≈ (517,609) → 存档槽 0 ≈ (538,120)
+      · 旧的无边框全屏 2560×1600：Load (1157,1489) → 存档槽 0 (1280,584)
+    两套都试，先窗口（当前启动偏好就是窗口模式）。
+    """
+    coord_sets = [
+        ("窗口 1280×720", (517, 609), (538, 120)),
+        ("旧全屏 2560×1600", (1157, 1489), (1280, 584)),
+    ]
     for attempt in range(3):
-        print(f"→ 进档尝试 {attempt + 1}: 点 Load(1157,1489) + 存档槽0(1280,584)")
-        raw_post("/menu/click", {"x": 1157, "y": 1489})
+        label, load_xy, slot_xy = coord_sets[min(attempt, 1)]
+        print(f"→ 进档尝试 {attempt + 1}（{label}）: Load{load_xy} + 存档槽0{slot_xy}")
+        raw_post("/menu/click", {"x": load_xy[0], "y": load_xy[1]})
         time.sleep(3.5)
-        raw_post("/menu/click", {"x": 1280, "y": 584})
+        raw_post("/menu/click", {"x": slot_xy[0], "y": slot_xy[1]})
         t0 = time.time()
         while time.time() - t0 < 25:
             if raw_get("/status").get("worldReady"):

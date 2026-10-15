@@ -129,7 +129,7 @@ TOOLS_EXPECTED = [
     "get_state", "look", "get_inventory",
     "go_to", "warp", "face",
     "swing_tool", "use_held", "interact", "press_key",
-    "menu_read", "menu_click",
+    "menu_read", "menu_click", "story",
     "select_item",
     "till", "plant", "water", "harvest",
     "sleep", "buy", "ship", "chest_read", "chest_store", "map_info",
@@ -149,7 +149,7 @@ def run_chain(c):
     )
     tl = c.request("tools/list")
     tools = tl.get("result", {}).get("tools", [])
-    check("tools/list: 共 35 个", len(tools) == 35, f"got {len(tools)}")
+    check("tools/list: 共 36 个", len(tools) == 36, f"got {len(tools)}")
     names = {t["name"] for t in tools}
     for n in TOOLS_EXPECTED:
         check(f"工具存在: {n}", n in names)
@@ -270,8 +270,8 @@ def run_chain(c):
     # ---- 剧本事件：默认不跳（快速失败）；STARDEW_AUTO_EVENT=1 才自动 skip ----
     mock_post("/mock/set", {"event": "pet"})
     t, err = c.call("select_item", {"name": "Axe"})
-    check("剧本事件: 默认不自动跳过（含事件信息）",
-          err and "剧本事件" in t and "收养" in t, t)
+    check("剧本事件: 默认不自动跳过（含事件信息与台词）",
+          err and "正在演剧情" in t and "收养" in t and "story" in t, t)
     ce = Client(env_extra={"STARDEW_AUTO_EVENT": "1"})
     try:
         mock_post("/mock/set", {"event": "pet"})
@@ -282,6 +282,43 @@ def run_chain(c):
               str(mock_get("/state").get("activeMenu")))
     finally:
         ce.close()
+    mock_post("/mock/set", {"menu": None})
+
+    # ---- 剧情：能感知 / 能读台词 / 能一屏一屏玩到结束 ----
+    mock_post("/mock/set", {"event": "story"})
+    t, err = c.call("get_state")
+    check("get_state: 直接报出剧情与当前台词",
+          ("【剧情】" in t) and ("无家可归" in t) and ("story" in t), t)
+    t, err = c.call("story")
+    check("story read: 说话人 + 台词 + 下一步指引",
+          (not err) and "玛妮" in t and "无家可归" in t and "action=next" in t, t)
+    t, err = c.call("story", {"action": "next"})
+    check("story next: 推进到第二屏", (not err) and "带回家" in t, t)
+    t, err = c.call("story", {"action": "next"})
+    check("story next: 到问题屏并列出选项 + 点击坐标兜底",
+          (not err) and "收养" in t and "[0] 是" in t and "[1] 否" in t
+          and "也可点 (640,558)" in t and "choose" in t, t)
+    t, err = c.call("story", {"action": "choose"})
+    check("story choose: 缺 option 如实报错", err and "需要 option" in t, t)
+    t, err = c.call("story", {"action": "choose", "option": 0})
+    check("story choose: 选完剧情结束", (not err) and "已结束" in t, t)
+    check("story: 事件已清空", mock_get("/state").get("activeEvent") is None, "还有事件")
+    t, err = c.call("story")
+    check("story: 无剧情时如实说没有", (not err) and "没有剧情" in t, t)
+
+    # ---- 剧情进行中：动作被挡，且**绝不能把剧情自动按掉** ----
+    mock_post("/mock/set", {"event": "story"})
+    t, err = c.call("select_item", {"name": "Axe"})
+    check("剧情中: 动作被挡且指向 story", err and "正在演剧情" in t and "story" in t, t)
+    check("剧情中: 剧情仍在（没被自动吃掉）",
+          mock_get("/state").get("activeEvent") is not None, "剧情被吃掉了！")
+    check("剧情中: 还停在第 0 屏",
+          "无家可归" in json.dumps(mock_get("/state").get("activeMenu"), ensure_ascii=False),
+          str(mock_get("/state").get("activeMenu")))
+    # skip 能整段跳过
+    t, err = c.call("story", {"action": "skip"})
+    check("story skip: 整段跳过", (not err) and "跳过" in t, t)
+    check("story skip: 事件已清", mock_get("/state").get("activeEvent") is None, "还有事件")
     mock_post("/mock/set", {"menu": None})
 
     # ---- 动作工具抽查 ----

@@ -5,7 +5,7 @@
 
 ## 这是什么
 
-本项目是一个**手写 MCP 服务器**（OCaml，单 exe），通过 NagiBridge-Remix mod 的 HTTP 接口（`localhost:7842`）操控《星露谷物语》里一个角色。提供 **35 个意图工具**，覆盖：感知 / 移动 / 交互 / 界面 / 农活 / 箱子取物 / 吃 / 社交 / 节日 / 生计。
+本项目是一个**手写 MCP 服务器**（OCaml，单 exe），通过 NagiBridge-Remix mod 的 HTTP 接口（`localhost:7842`）操控《星露谷物语》里一个角色。提供 **36 个意图工具**，覆盖：感知 / 移动 / 交互 / 界面 / 农活 / 箱子取物 / 吃 / 社交 / 节日 / 生计。
 
 数据流：**你（MCP 客户端）→ stdio JSON-RPC → junimo-mcp.exe → HTTP → mod → 游戏**。你只管调工具；翻译与可靠性（时序等待、游戏侧校验、失败回滚）由服务器内部处理。
 
@@ -125,7 +125,7 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
    - 正常返回 = 全链路通了 ✓
    - "连接失败" = 检查：游戏在跑吗 / `Mods\NagiBridge\` 是否就位（应有 `NagiBridge.dll` + `manifest.json`）/ 7842 是否被占（`netstat -ano | findstr 7842`）
    - "还没有进入存档" = 正常，请用户进档后再操作
-3. 确认工具列表为 35 个
+3. 确认工具列表为 36 个
 
 ### 部署常见问题
 
@@ -144,7 +144,7 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 
 1. **游戏在跑吗**：直接调 `get_state`。报"连接失败 / 游戏未启动"→ 游戏没开（提醒用户运行 `StardewModdingAPI.exe`，别走 Steam）。
 2. **进档了吗**：`get_state` 回答"游戏还没有进入存档"→ 在标题菜单，先让用户进档；未进档时所有动作工具都会拒绝。
-3. **工具齐吗**：你的工具列表应有 35 个（`get_state` … `festival_answer`）。少于 35 说明连接的是旧版本服务器（请确保指向最新版 `junimo-mcp.exe`）。
+3. **工具齐吗**：你的工具列表应有 36 个（`get_state` … `festival_answer`）。少于 36 说明连接的是旧版本服务器（请确保指向最新版 `junimo-mcp.exe`）。
 
 ## 十条铁律（先背，不然会翻车）
 
@@ -153,13 +153,13 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 3. **工具是同步的，且内含等待**。每次调用会阻塞到动作在游戏里完成（含内部时序与校验），按返回决定下一步。**你不需要、也不应该自己加延时或连发动作**。
 4. **长时间挂机先冻结时钟**：`pause_time`。游戏时间会流逝——现实约 12 分钟就到凌晨 2:00，角色晕倒并**扣钱**。干完记得 `resume_time`。
 5. **移动失败别硬刚**：`go_to` 报"寻路失败"就是真到不了（服务器拒绝"直穿墙"作弊回退）；报"已到达目标附近"= 目标格站不住、停在相邻格，**视为到达**（游戏里很多格子不可站立，这是设计行为）。
-6. **菜单基本不用你操心**：动作前会**自动按掉"无选项对话"**（NPC 招呼 / 送礼答谢 / 提示框——按 confirm 是唯一能做的事）。只有**带选项的问题框 / 商店 / 箱子 / 背包**会挡下来，并且报错里**直接给原文和带序号的选项**，`menu_click {"option":N}` 一步就能处理（不必先 `menu_read`）。**剧本事件默认不跳**，用 `press_key skip` 跳过（或设 `STARDEW_AUTO_EVENT=1` 让它自动跳）。
+6. **菜单/剧情基本不用你操心**：动作前会**自动按掉"无选项对话"**（NPC 招呼 / 送礼答谢 / 提示框——按 confirm 是唯一能做的事）。但**剧情（剧本事件）永不自动按掉**——那是内容，读了就没了。想要**看完剧情**就用 `story`：`read` 读当前一屏（说话人 + 台词 + 选项）、`next` 下一屏、`choose option=N` 选回答；不想看才 `press_key skip`（**不可回放**）。只有**带选项的问题框 / 商店 / 箱子 / 背包**会挡下来，报错里**直接给原文和带序号的选项**，`menu_click {"option":N}` 一步就能处理（不必先 `menu_read`）。
 7. **背包容量**：`harvest` 或大量取物前，先 `get_inventory` 确认空位（背包满时收获物会掉地上）。
 8. **体力管理**：批量农活在体力 <15% 时会主动中止；低了就 `eat`（回体力/HP）或回家 `sleep`。
 9. **"没有需要浇水的作物"不是错误**：雨天、洒水器覆盖、或刚浇过时，`water` 会这样回答——如实接受即可。
 10. **节日查询用 `festival`**（今天/明天/下一个）；参加节日要走游戏原生入口（别 `warp` 到节日场地，不触发场景）。
 
-## 工具速查（35 个，按"我想…"找）
+## 工具速查（36 个，按"我想…"找）
 
 | 我想… | 工具 | 关键说明 |
 |---|---|---|
@@ -187,6 +187,7 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 | 睡觉（★落盘） | `sleep` | **唯一存档方式**；返回新一天状态 |
 | 冻结 / 恢复时间 | `pause_time` / `resume_time` | 长任务与挂机必用 |
 | 菜单操作 | `menu_read` / `menu_click` / `press_key` | 先读后点；press_key 可发 confirm/cancel/数字键 |
+| **看剧情 / 推进剧情** | `story` | `read` 读当前一屏（说话人+台词+选项）、`next` 下一屏、`choose option=N` 选回答、`skip` 跳过整段。剧情**不会**被自动按掉；`get_state` 也会报出当前剧情 |
 | 选中物品 / 使用手持 / 挥工具 / 与面前格交互 | `select_item` / `use_held` / `swing_tool` / `interact` | 播种放置用 `use_held`；对话 NPC 用 `interact` |
 
 ## 一个标准工作日（照抄即可）
@@ -215,7 +216,7 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 - **构建**：`bash build.sh build`（→ `_build/default/bin/main.exe`）；`bash build.sh runtest`（单测）；`bash build.sh release`（拷进 `release/`）。受管 Cygwin 环境走 `build.sh`（Windows 细节见 README）；标准 opam 环境直接用 `dune build` / `dune runtest`。
 - **测试四层**：单测（`dune runtest`）→ mock 冒烟（`python test/mock_smoke.py`，**不需要游戏**，114 项）→ 真机脚本（`test/live_*.py`，需要游戏在跑）→ 压测（`live_soak.py`）。
 - **改行为 → 必须同步测试**：新增/修改端点要同步改 `test/mock_nagibridge.py` + `test/mock_smoke.py` 断言；涉及真机语义的补 `test/live_*.py`。
-- **代码地图**：`lib/mcp.ml`（协议核心）/ `lib/intents.ml`（35 个工具实现与渲染，最大文件；含**效果核验式动作** `op_use_effect`）/ `lib/game_api.ml`（端点封装）/ `lib/game_state.ml`（状态解析与中文渲染）/ `lib/wait.ml`（等待器 + 自适应结算 + `/walk_to` 到达轮询）/ `lib/http_client.ml`（HTTP 层：原生 socket + keep-alive，唯一 IO；`STARDEW_HTTP=curl` 回退）。依赖极简：仅 `yojson`。
+- **代码地图**：`lib/mcp.ml`（协议核心）/ `lib/intents.ml`（36 个工具实现与渲染，最大文件；含**效果核验式动作** `op_use_effect`）/ `lib/game_api.ml`（端点封装）/ `lib/game_state.ml`（状态解析与中文渲染）/ `lib/wait.ml`（等待器 + 自适应结算 + `/walk_to` 到达轮询）/ `lib/http_client.ml`（HTTP 层：原生 socket + keep-alive，唯一 IO；`STARDEW_HTTP=curl` 回退）。依赖极简：仅 `yojson`。
 - **两条"快路径"（`till`/`water`/`go_to` 内部自动选，无需 Agent 关心）**：`go_to` 走 mod 的 `/walk_to`（一次请求走全程 + 出发前校验越界/门格/站不住；`STARDEW_WALK=move` 可回退旧的分段接力）；`till`/`water` 在**工具升级等级 ≥1** 且格数 ≥4 时走 mod 的 `/tool_area`（矩形蓄力批量；`STARDEW_AREA=off|force` 可强制切换，`STARDEW_AREA_TIMEOUT` 调等待上限）。
 - **纪律**：不发假成功（报成功必须在游戏里真发生；失败必须有可读中文原因）。⚠️ **挥动的生效帧在 `/use` 返回后约 550ms 才落**（真机实测）：所以农活动作一律用 `op_use_effect` **回读地块直到终态出现**再继续下一格——睡固定时长会打断上一格的挥动，造成"3 格一行必丢中间格"式假成功。工具描述要写明"什么时候用 + 注意事项"。
 - **部署**：本地开发用新二进制放 `release/vN/junimo-mcp.exe`（`release/` 已 gitignore、不入库），更新 `~/.workbuddy/mcp.json` 指向它；**重启 WorkBuddy 后连接器才加载新版**。对外分发走 GitHub Releases（README 有下载链接）。

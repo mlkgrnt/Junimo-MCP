@@ -4,7 +4,7 @@
     纪律：stdout 只写协议消息；一切日志走 stderr（见 Config.log）。 *)
 
 let server_name = "junimo-mcp"
-let server_version = "3.1.0"
+let server_version = "3.2.0"
 let default_protocol = "2024-11-05"
 
 let handle_initialize (params : Yojson.Safe.t option) : Yojson.Safe.t =

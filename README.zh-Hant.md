@@ -4,7 +4,7 @@
 
 [简体中文](README.md) · **繁體中文** · [English](README.en-US.md) · [Español](README.es-ES.md)
 
-以 **OCaml 手寫**的 MCP 伺服器：給 AI Agent 一雙在《星露谷物語》裡幹活的手——**35 個意圖工具**，從種田採收到取物聚餐、社交過節，全流程可靠執行。
+以 **OCaml 手寫**的 MCP 伺服器：給 AI Agent 一雙在《星露谷物語》裡幹活的手——**36 個意圖工具（含劇情閱讀）**，從種田採收到取物聚餐、社交過節，全流程可靠執行。
 
 - **協定層**：JSON-RPC 2.0 over stdio，手寫實作（`initialize` / `tools/list` / `tools/call`），零 MCP 框架相依
 - **控制層**：原生 HTTP + keep-alive（OCaml socket）→ [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix)（預設 `http://localhost:7842`）→ 遊戲內角色
@@ -35,7 +35,7 @@ Agent 會照 `AGENTS.md` 的《部署安裝》章節自動完成所有步驟：
 ```
 ┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7842   ┌──────────────────┐
 │ MCP 客戶端  │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │ NagiBridge-Remix │ ──► 星露谷物語
-│  (你的 AI)  │     35 個意圖工具     │    (OCaml 5.5)   │       curl 子行程       │    (SMAPI mod)   │
+│  (你的 AI)  │     36 個意圖工具     │    (OCaml 5.5)   │     原生 HTTP(socket)   │    (SMAPI mod)   │
 └────────────┘                       └──────────────────┘                         └──────────────────┘
 ```
 
@@ -105,7 +105,7 @@ curl -sS --noproxy '*' http://localhost:7842/status
 
 > ⚠️ 位址必須用 `http://localhost:7842`，**不能用 `127.0.0.1`**——mod 的 HttpListener 只註冊了 localhost 前綴，127.0.0.1 會被系統以 400 拒絕（實機實測）。
 
-## 工具清單（35）
+## 工具清單（36）
 
 | 群組 | 工具 | 說明 |
 |---|---|---|
@@ -120,6 +120,7 @@ curl -sS --noproxy '*' http://localhost:7842/status
 | | `interact` | 與面前格互動（=確認鍵），回傳面前格資訊 |
 | | `press_key` | 模擬按鍵（confirm / cancel / 數字 / 方向…） |
 | 介面 | `menu_read` | 讀取目前選單 / 對話 / 商店 / 按鈕 |
+| | `story` | **讀/推進劇情**：read 讀當前屏、next 下一屏、choose 選回答、skip 跳過整段 |
 | | `menu_click` | 點選單（選項 index / 按鈕名稱 / 座標） |
 | 物品 | `select_item` | 選取背包物品拿在手上 |
 | 農活 | `till` | 批次鋤地（蛇行移動；冪等：「已鋤」記為軟性略過；體力 <15% 中止） |
@@ -208,7 +209,7 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 自動執行：建置 + 單�
 
 - **截圖 / 錄影不可用**：本機 GDI 抓不到 OpenGL 畫面——驗證一律走遊戲內 API 讀數（比截圖更精確）。
 - **長距離移動**：mod 的 BFS 有 500 步上限，`go_to` 已內建分段接力（≤10 格/段）繞過；跨地圖請用 `warp`。
-- **選單／對話不再一律卡住**：動作前會**自動按掉「無選項對話」**（NPC 招呼、送禮答謝、提示框——按 confirm 是唯一能做的事，不丟資訊也不做選擇）；**帶選項的問題框、商店、箱子一律不代你回答**，會當場快速失敗並把**原文與選項**一起回報（直接 `menu_click {"option":N}` 一步處理，不必先 `menu_read`）。劇情事件預設**不跳**（`STARDEW_AUTO_EVENT=1` 可讓它自動 `skip`）。
+- **選單／對話不再一律卡住**：動作前會**自動按掉「無選項對話」**（NPC 招呼、送禮答謝、提示框——按 confirm 是唯一能做的事，不丟資訊也不做選擇）；**帶選項的問題框、商店、箱子一律不代你回答**，會當場快速失敗並把**原文與選項**一起回報（直接 `menu_click {"option":N}` 一步處理，不必先 `menu_read`）。**劇情（劇情事件）永不自動按掉**——那是內容，讀了就沒了；`story` 工具專門用來**一屏一屏讀著玩**（read/next/choose），`get_state` 也會直接報出目前劇情與台詞。不想看就 `press_key skip` 跳過整段（不可回放），或設 `STARDEW_AUTO_EVENT=1` 讓它自動跳。
 - **長時間掛機**：先 `pause_time` 凍結遊戲時鐘（現實約 12 分鐘，遊戲內就從早到 2:00 昏倒，實測會扣 10% 金幣），結束後 `resume_time`。
 - **遠端購買**：mod 的 `/buy` 端點按售價 ×2 計價（無商店介面的便利費 / 除錯端點）。
 - **無「明天天氣預報」**：只有當天天氣（`get_state` 的【天气】行）；「今天 / 明天是不是節日」由工具內建日曆計算。
@@ -220,7 +221,7 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 自動執行：建置 + 單�
 
 | 文件 | 給誰看 | 內容 |
 |---|---|---|
-| `AGENTS.md`（簡體中文） | **AI Agent** | 部署安裝 + 十條鐵律 + 35 工具速查 + 開發紀律 |
+| `AGENTS.md`（簡體中文） | **AI Agent** | 部署安裝 + 十條鐵律 + 36 工具速查 + 開發紀律 |
 | `README.md` / `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | 人類 | 簡中（zh-Hans，預設）/ 繁中（本檔）/ 英文 / 西語 |
 | `test/` | 開發者 | 四層測試套件 |
 

@@ -4,7 +4,7 @@
 
 [简体中文](README.md) · [繁體中文](README.zh-Hant.md) · **English** · [Español](README.es-ES.md)
 
-A **hand-written OCaml** MCP server — a pair of working hands for AI agents in *Stardew Valley*: **35 intent tools** covering everything from tilling and harvesting to item pickup, meals, socializing, and festivals, executed reliably end to end.
+A **hand-written OCaml** MCP server — a pair of working hands for AI agents in *Stardew Valley*: **36 intent tools** (including story reading) covering everything from tilling and harvesting to item pickup, meals, socializing, and festivals, executed reliably end to end.
 
 - **Protocol layer**: JSON-RPC 2.0 over stdio, implemented by hand (`initialize` / `tools/list` / `tools/call`), zero MCP framework dependencies
 - **Control layer**: native HTTP with keep-alive (OCaml sockets) → [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) (default `http://localhost:7842`) → the in-game character
@@ -35,7 +35,7 @@ You only need two things: ① a Windows machine with *Stardew Valley* installed;
 ```
 ┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7842   ┌──────────────────┐
 │ MCP client │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │ NagiBridge-Remix │ ──► Stardew Valley
-│  (your AI) │    35 intent tools   │    (OCaml 5.5)   │     curl subprocess     │    (SMAPI mod)   │
+│  (your AI) │    36 intent tools   │    (OCaml 5.5)   │   native HTTP (socket)  │    (SMAPI mod)   │
 └────────────┘                       └──────────────────┘                         └──────────────────┘
 ```
 
@@ -105,7 +105,7 @@ curl -sS --noproxy '*' http://localhost:7842/status
 
 > ⚠️ The address must be `http://localhost:7842` — **not `127.0.0.1`**: the mod's HttpListener only registers the localhost prefix, and 127.0.0.1 gets rejected with HTTP 400 (observed in real runs).
 
-## Tool reference (35)
+## Tool reference (36)
 
 | Group | Tool | Description |
 |---|---|---|
@@ -120,6 +120,7 @@ curl -sS --noproxy '*' http://localhost:7842/status
 | | `interact` | Interact with the tile in front (= the confirm key); returns that tile's info |
 | | `press_key` | Send key presses (confirm / cancel / numbers / directions…) |
 | UI | `menu_read` | Read the current menu / dialogue / shop / buttons |
+| | `story` | **Read/advance story**: read the current screen, next, choose an answer, or skip the whole event |
 | | `menu_click` | Click a menu (option index / button name / coordinates) |
 | Items | `select_item` | Select an inventory item as the held item |
 | Farm work | `till` | Batch tilling (snake-pattern movement; idempotent: "already tilled" is a soft skip; stops below 15% stamina) |
@@ -208,7 +209,7 @@ CI (GitHub Actions, ubuntu) runs on every push / PR: build + unit tests + mock s
 
 - **Screenshots / video are unavailable**: GDI can't capture the OpenGL frame on this machine — verification relies on in-game API readings (which are more precise anyway).
 - **Long-distance movement**: the mod's BFS has a 500-step cap; `go_to` works around it with built-in shuttling (≤10 tiles per leg). Use `warp` to cross maps.
-- **Menus no longer always block you**: before acting, a *plain* dialogue (an NPC greeting, a thank-you after a gift, an info box — where pressing confirm is the only possible action, so nothing is lost) is **auto-dismissed**; **questions with options, shops and chests are never answered for you** — the action fails fast and reports the **text plus the options**, so a single `menu_click {"option":N}` resolves it (no `menu_read` round trip needed). Scripted events are **not** skipped by default (`STARDEW_AUTO_EVENT=1` makes it `skip` them).
+- **Menus no longer always block you**: before acting, a *plain* dialogue (an NPC greeting, a thank-you after a gift, an info box — where pressing confirm is the only possible action, so nothing is lost) is **auto-dismissed**; **questions with options, shops and chests are never answered for you** — the action fails fast and reports the **text plus the options**, so a single `menu_click {"option":N}` resolves it (no `menu_read` round trip needed). **Scripted events (story) are never auto-dismissed** — that's content, and once it's gone it's gone; the `story` tool exists precisely to **play through it screen by screen** (read/next/choose), and `get_state` reports the running event and its current line. To skip it instead use `press_key skip` (no replay), or set `STARDEW_AUTO_EVENT=1` to skip automatically.
 - **Long idle sessions**: call `pause_time` first to freeze the clock (about 12 real minutes takes the in-game day to 2:00 AM, passing out and — measured — costing 10% of your gold); call `resume_time` when done.
 - **Remote buying**: the mod's `/buy` endpoint charges ×2 the sale price (a convenience/debug endpoint without a shop UI).
 - **No "tomorrow's weather"**: only today's weather is available (the weather line in `get_state`); "is today / tomorrow a festival" is computed by a built-in calendar.
@@ -220,7 +221,7 @@ CI (GitHub Actions, ubuntu) runs on every push / PR: build + unit tests + mock s
 
 | Doc | Audience | Content |
 |---|---|---|
-| `AGENTS.md` *(Simplified Chinese)* | **AI agents** | Deployment + ten iron rules + 35-tool cheat sheet + development discipline |
+| `AGENTS.md` *(Simplified Chinese)* | **AI agents** | Deployment + ten iron rules + 36-tool cheat sheet + development discipline |
 | `README.md` / `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | Humans | Simplified Chinese (zh-Hans, default) / Traditional Chinese / English (this file) / Spanish |
 | `test/` | Developers | Four-layer test suite |
 

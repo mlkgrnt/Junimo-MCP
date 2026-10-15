@@ -27,6 +27,22 @@ PLAYER_NAME = "Tester"
 MOVE_LAG = 0.1  # 起步 race 窗口（秒）
 MOVE_DURATION = 0.8  # 移动时长（秒）
 
+# 多屏剧情（真机：SDV 剧本事件就是这样一屏一屏推进的；最后一屏是问题框，必须选）
+# 形如 (台词, 选项列表或 None)
+STORY_LINES = [
+    ("我看到它坐在你的农场门口！它可能是无家可归了……可怜的小东西。", None),
+    ("你要把它带回家吗？", None),
+    (
+        "你打算收养这只猫吗？",
+        [
+            {"index": 0, "key": "Yes", "text": "是",
+             "bounds": {"x": 48, "y": 528, "w": 1184, "h": 60}},
+            {"index": 1, "key": "No", "text": "否",
+             "bounds": {"x": 48, "y": 596, "w": 1184, "h": 60}},
+        ],
+    ),
+]
+
 # 地图字符:
 #   # 墙  . 空地  D 可锄泥地  d 已锄(无作物)  c 作物未浇水  C 作物已浇水
 #   R 成熟作物(未浇水)  X 石头  E 箱子  T 树
@@ -111,6 +127,7 @@ class World:
         ]
         self.menu = None
         self.active_event = None
+        self.story_idx = 0
         self.move_target = None
         self.move_start = 0.0
         # v3（Remix 仿真）：NPC / 好感 / 天气 / 节日活动
@@ -373,19 +390,41 @@ class World:
                     result["harvestable"] = True
         return result
 
+    def _story_advance(self):
+        """剧情一屏一屏推进（真机就是按 confirm 推进 DialogueBox）。"""
+        i = self.story_idx + 1
+        if i >= len(STORY_LINES):
+            self.story_idx = 0
+            self.active_event = None
+            self.menu = None
+            return
+        self.story_idx = i
+        line, opts = STORY_LINES[i]
+        self.active_event["message"] = line
+        self.menu = {
+            "type": "DialogueBox",
+            "dialogue": line,
+            "responses": opts,
+            "speaker": "玛妮",
+        }
+
     def key(self, body):
         self.need_world()
         key = body.get("key", "confirm")
         count = int(body.get("count", 1))
-        if key.lower() in ("confirm", "action") and self.menu is not None:
-            # 真机语义：confirm 只推进**无选项对话**（NPC 招呼/提示框）；
-            # 带选项的问题框按 confirm 不做选择（必须 menu_click），故保持开着。
-            if not self.menu.get("responses"):
+        if key.lower() in ("confirm", "action"):
+            if self.active_event is not None:
+                # 剧情：一屏一屏推进；最后一屏是问题框（带 options），confirm 推不动
+                if self.menu is not None and not self.menu.get("responses"):
+                    self._story_advance()
+            elif self.menu is not None and not self.menu.get("responses"):
+                # 无选项对话（NPC 招呼/提示框）⇒ confirm 关掉
                 self.menu = None
         if key.lower() == "skip" and self.menu is not None:
             # 剧本事件跳过：真机上 press_key skip 能整段结束事件（含问题框）
             self.menu = None
             self.active_event = None
+            self.story_idx = 0
         return {"ok": True, "key": key, "count": count}
 
     def select(self, body):
@@ -685,6 +724,11 @@ class World:
         if self.menu is None:
             return {"ok": False, "error": "No menu open"}
         if "option" in body:
+            # 回答剧情里的问题 ⇒ 整段事件结束（真机 event_answerDialogueQuestion 后走完剩余脚本，
+            # mock 简化为"事件结束"）
+            if self.active_event is not None:
+                self.active_event = None
+                self.story_idx = 0
             self.menu = None
             return {"ok": True, "clicked": "response", "option": int(body["option"])}
         if "button" in body:
@@ -969,6 +1013,7 @@ class World:
         if "menu" in body:
             v = body["menu"]
             self.active_event = None  # 设菜单 = 清掉上一场事件（测试隔离）
+            self.story_idx = 0
             if v is None:
                 self.menu = None
             elif v == "dialogue":
@@ -994,6 +1039,22 @@ class World:
             v = body["event"]
             if v is None:
                 self.active_event = None
+                self.story_idx = 0
+            elif v == "story":
+                # 多屏剧情：read → next → next → 问题屏 → choose → 结束
+                self.story_idx = 0
+                line, opts = STORY_LINES[0]
+                self.active_event = {
+                    "id": "1590166",
+                    "skippable": True,
+                    "message": line,
+                }
+                self.menu = {
+                    "type": "DialogueBox",
+                    "dialogue": line,
+                    "responses": opts,
+                    "speaker": "玛妮",
+                }
             elif v == "pet":
                 # 仿真真机的"宠物领养"剧本事件：走位触发 → 弹问题框 → 角色不能移动
                 self.active_event = {

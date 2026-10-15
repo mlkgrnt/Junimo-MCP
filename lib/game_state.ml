@@ -165,6 +165,27 @@ let fetch () : t =
   last_fetch := Some (st, !fetch_gen);
   st
 
+(* ---------- 剧本事件（剧情）----------
+
+   mod 的 /state 给 `activeEvent = {id, skippable, message}`，其中 **message 就是当前
+   那一句台词**（mod 取 `DialogueBox.getCurrentString()`）。没有事件时为 null。
+   这是 Agent「感知到在演剧情」的唯一信息源 —— 不暴露出来的话，它只会觉得"角色动不了"。 *)
+let active_event (s : t) : (string * bool * string) option =
+  match get_in s.raw [ "activeEvent" ] with
+  | Some (`Assoc _ as e) ->
+      let id = get_str e [ "id" ] in
+      if id = "" then None
+      else
+        Some
+          ( id,
+            (match member "skippable" e with Some (`Bool b) -> b | _ -> false),
+            (match member "message" e with Some (`String m) -> m | _ -> "") )
+  | _ -> None
+
+let event_skippable = function
+  | Some (_, sk, _) -> sk
+  | None -> false
+
 (* ---------- 渲染 ---------- *)
 
 let season_cn = function
@@ -252,6 +273,14 @@ let render (s : t) : string =
         | None -> ());
         Buffer.add_string b
           (Printf.sprintf "【地图】%s（%dx%d）\n" s.loc_name s.loc_w s.loc_h);
+        (match active_event s with
+        | Some (id, skip, msg) ->
+            Buffer.add_string b
+              (Printf.sprintf "【剧情】事件进行中（id %s%s）%s\n" id
+                 (if skip then "，可跳过" else "")
+                 (if msg = "" then ""
+                  else "：「" ^ msg ^ "」（用 story 一屏一屏读/推进）"))
+        | None -> ());
         Buffer.add_string b
           (match s.active_menu with
           | Some m -> Printf.sprintf "【菜单】当前打开：%s（可用 menu_read 查看内容）\n" m

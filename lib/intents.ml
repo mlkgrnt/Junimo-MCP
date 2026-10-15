@@ -109,49 +109,185 @@ let is_plain_dialogue (st : Game_state.t) : bool =
   in
   is_dlg && no_opts
 
-let event_skippable (st : Game_state.t) : bool =
-  match Game_state.get_in st.raw [ "activeEvent"; "skippable" ] with
-  | Some (`Bool b) -> b
-  | _ -> false
+let event_skippable = Game_state.event_skippable
+(* 保留别名，避免调用点改动；实现已收敛到 game_state.ml（也供渲染层复用） *)
 
-(* 尝试自动清掉"不需要决策"的模态界面。返回 true = 现在没有菜单了。 *)
+(* 尝试自动清掉"不需要决策"的模态界面。返回 true = 现在没有菜单了。
+
+   🎬 **剧情例外（2026-10-14，用户要求"希望 agent 能玩到剧情"）**：事件进行中时
+   **绝不替 Agent 按掉**——那是在念台词，按过去就等于把剧情吃了。只有显式开了
+   `STARDEW_AUTO_EVENT=1` 才整段跳过。 *)
 let auto_clear_menu () : bool =
   if not (Config.auto_menu ()) then false
   else
     let st0 = Game_state.fetch () in
     if st0.active_menu = None then true
-    else begin
-      if Config.auto_event () && event_skippable st0 then begin
-        (try ignore (Game_api.key ~key:"skip" ()) with _ -> ());
-        Wait.sleep_ms 500
-      end;
-      (* 无选项对话：按 confirm 推进（最多 6 屏，防止事件连环对话把我们拖住） *)
-      let cleared = ref false and steps = ref 0 in
-      while (not !cleared) && !steps < 6 do
-        let st = Game_state.fetch () in
-        match st.active_menu with
-        | None -> cleared := true
-        | Some _ when is_plain_dialogue st ->
-            incr steps;
-            (try ignore (Game_api.key ~key:"confirm" ()) with _ -> ());
-            Wait.sleep_ms 350
-        | Some _ -> steps := 6 (* 要 Agent 决策的 ⇒ 立刻停手，一个键都不按 *)
-      done;
-      !cleared
-    end
+    else
+      match Game_state.active_event st0 with
+      | Some _ ->
+          if Config.auto_event () && Game_state.event_skippable (Game_state.active_event st0)
+          then begin
+            (try ignore (Game_api.key ~key:"skip" ()) with _ -> ());
+            Wait.sleep_ms 500;
+            (Game_state.fetch ()).active_menu = None
+          end
+          else false
+      | None ->
+          (* 无选项对话：按 confirm 推进（最多 6 屏，防止连环对话把我们拖住） *)
+          let cleared = ref false and steps = ref 0 in
+          while (not !cleared) && !steps < 6 do
+            let st = Game_state.fetch () in
+            match st.active_menu with
+            | None -> cleared := true
+            | Some _ when is_plain_dialogue st ->
+                incr steps;
+                (try ignore (Game_api.key ~key:"confirm" ()) with _ -> ());
+                Wait.sleep_ms 350
+            | Some _ -> steps := 6 (* 要 Agent 决策的 ⇒ 立刻停手，一个键都不按 *)
+          done;
+          !cleared
 
 let menu_block_msg ?(what = "动作") (st : Game_state.t) : string =
+  match Game_state.active_event st with
+  | Some (id, sk, msg) ->
+      (* 屏幕上正在显示的那一句：优先取当前对话（和 story 的取法一致），退回事件 message *)
+      let on_screen =
+        let d = Game_state.get_str st.raw [ "activeMenu"; "dialogue" ] in
+        if d <> "" then d else msg
+      in
+      Printf.sprintf
+        "当前正在演剧情（事件 id %s%s），已中止%s——剧情期间角色不能移动。%s\
+         处理办法：用 **story** 一屏一屏读/推进（action=read 读当前屏、next 下一屏、\
+         choose 选回答）；不想看就 press_key skip 跳过整段（**跳过不可回放**）。"
+        id
+        (if sk then "，可跳过" else "，不可跳过")
+        what
+        (if on_screen = "" then ""
+         else Printf.sprintf "当前台词：「%s」。\n" (clip on_screen))
+  | None ->
+      Printf.sprintf
+        "当前有菜单/对话打开（%s），已中止%s——模态界面下动作会挂住、角色也不能移动。\
+         处理办法：带选项的用 menu_click {\"option\":N} 直接选（或 story action=choose \
+         option=N）；要看全貌用 menu_read / story；无选项的对话按 press_key confirm。"
+        (menu_summary st) what
+
+(* ---------- 剧情 / 对话：一屏一屏读的原料 ----------
+
+   用户诉求（2026-10-14）：**"希望 agent 能玩到剧情"**。所以除了"别把它按掉"，
+   还要让它**读得到台词**：SDV 的剧情是一屏一屏推进的，台词在
+   `activeMenu.dialogue`（当前屏）与 `activeEvent.message`（同一句，事件路径）里，
+   说话人在 `activeMenu.speaker`，选项在 `activeMenu.responses`。 *)
+
+type story_view = {
+  sv_event : (string * bool) option; (* 事件 id、是否可跳过 *)
+  sv_kind : string; (* 当前菜单类型；无菜单时 "" *)
+  sv_speaker : string;
+  sv_line : string; (* 当前这一屏的台词 *)
+  sv_options : string list;
+  sv_is_dialogue : bool; (* 是"剧情/对话"（而不是商店/箱子这类界面）*)
+}
+
+let story_view (st : Game_state.t) : story_view =
   let ev =
-    match Game_state.get_in st.raw [ "activeEvent"; "message" ] with
-    | Some (`String s) when s <> "" -> Printf.sprintf "（剧本事件进行中：「%s」）" (clip s)
-    | _ -> ""
+    match Game_state.active_event st with
+    | Some (id, sk, _) -> Some (id, sk)
+    | None -> None
   in
-  Printf.sprintf
-    "当前有菜单/对话/事件打开（%s）%s，已中止%s——模态界面下动作会挂住、角色也不能移动。\
-     处理办法：带选项的用 menu_click {\"option\":N} 直接选；要看全貌用 menu_read；\
-     无选项的对话按 press_key confirm；剧本事件按 press_key skip（或设 STARDEW_AUTO_EVENT=1 \
-     让它自动跳过）。"
-    (menu_summary st) ev what
+  let kind = match st.active_menu with Some k -> k | None -> "" in
+  let speaker = Game_state.get_str st.raw [ "activeMenu"; "speaker" ] in
+  let line =
+    let d = Game_state.get_str st.raw [ "activeMenu"; "dialogue" ] in
+    if d <> "" then d
+    else match Game_state.active_event st with Some (_, _, m) -> m | None -> ""
+  in
+  let options =
+    match Game_state.get_in st.raw [ "activeMenu"; "responses" ] with
+    | Some (`List l) -> List.map menu_option_text l
+    | _ -> []
+  in
+  let is_dialogue =
+    match st.active_menu with
+    | Some k ->
+        k = "DialogueBox"
+        || (String.length k >= 8 && String.sub k 0 8 = "Dialogue")
+    | None -> ev <> None
+    (* 事件进行中但这一瞬没弹框（过场/换场）也算剧情 *)
+  in
+  {
+    sv_event = ev;
+    sv_kind = kind;
+    sv_speaker = speaker;
+    sv_line = line;
+    sv_options = options;
+    sv_is_dialogue = is_dialogue;
+  }
+
+(* 从 `/menu` 取每个选项的点击坐标中心（`/state` 的 responses 只有文本，没有 bounds）。
+
+   真机用途（2026-10-15 实测）：**剧本事件的问题框**用 `menu_click {"option":N}` 点了
+   **不生效**——mod 的 `event_answerDialogueQuestion` 明明登记了答案（回包 key="No"），
+   但对话框不关、事件也不推进；`menu_close`、confirm、按 bounds 点坐标也都试过，同样不动。
+   所以多给 Agent 一条路：**像真人一样点选项坐标**（`/menu` 给的 bounds 就是 menu_click
+   认的 UI 空间坐标）。哪条路通就用哪条。 *)
+let option_clicks () : (int * int) list =
+  try
+    let j = Game_api.menu () in
+    match Game_state.get_in j [ "responses" ] with
+    | Some (`List l) ->
+        List.filter_map
+          (fun r ->
+            match Game_state.get_in r [ "bounds" ] with
+            | Some (`Assoc _ as b) ->
+                let x = Game_state.get_int b [ "x" ]
+                and y = Game_state.get_int b [ "y" ]
+                and w = Game_state.get_int b [ "w" ]
+                and h = Game_state.get_int b [ "h" ] in
+                if w <= 0 || h <= 0 then None
+                else Some (x + (w / 2), y + (h / 2))
+            | _ -> None)
+          l
+    | _ -> []
+  with _ -> []
+
+let render_story ?(clicks = []) (v : story_view) : string =
+  let b = Buffer.create 256 in
+  (match v.sv_event with
+  | Some (id, sk) ->
+      Buffer.add_string b
+        (Printf.sprintf "【剧情】事件进行中（id %s%s）\n" id
+           (if sk then "，可跳过" else "，不可跳过"))
+  | None -> ());
+  if not v.sv_is_dialogue then
+    Buffer.add_string b
+      (Printf.sprintf "【剧情】当前没有剧情/对话在进行%s\n"
+         (if v.sv_kind = "" then ""
+          else Printf.sprintf "（打开的是 %s，内容用 menu_read 看）" v.sv_kind))
+  else begin
+    if v.sv_line <> "" then
+      Buffer.add_string b
+        (Printf.sprintf "【%s】%s\n"
+           (if v.sv_speaker = "" then "台词" else v.sv_speaker)
+           v.sv_line)
+    else Buffer.add_string b "【台词】（这一屏没有文字，可能是过场画面）\n";
+    if v.sv_options <> [] then begin
+      Buffer.add_string b "【选项】（不会替你选）\n";
+      List.iteri
+        (fun i o ->
+          let xy =
+            match List.nth_opt clicks i with
+            | Some (x, y) -> Printf.sprintf "（也可点 (%d,%d)）" x y
+            | None -> ""
+          in
+          Buffer.add_string b (Printf.sprintf "  [%d] %s%s\n" i o xy))
+        v.sv_options
+    end;
+    Buffer.add_string b
+      (if v.sv_options <> [] then
+         "【下一步】story action=choose option=N 选一项；若没反应就 menu_click {\"x\":N,\"y\":N} 按坐标点"
+       else
+         "【下一步】story action=next 读下一屏；action=skip 跳过整段剧情")
+  end;
+  String.trim (Buffer.contents b)
 
 (* 动作/走位前的模态界面卫检：能自动清的先自动清，清不掉再快速失败并说清要做什么。 *)
 let require_no_menu ?(what = "动作") () : unit =
@@ -823,6 +959,103 @@ let tool_menu_read =
       (fun _ ->
         let j = Game_api.menu () in
         Game_state.render_menu j);
+  }
+
+let tool_story =
+  {
+    name = "story";
+    description =
+      "阅读并推进剧情 / 对话（剧本事件、NPC 对话、问答选项）。\
+       什么时候用：走到某处触发了剧情、跟 NPC 说完话、节日过场时——**想看/想玩剧情就用它**；\
+       动作工具报「正在演剧情」时也用它读完/跳过再继续。\
+       action=read（默认）只读当前一屏、不改变任何东西；next 推进一屏并返回新的一屏台词；\
+       choose 配合 option:N 回答（**选项不会替你选**）；skip 跳过整段事件。\
+       注意：剧情是一屏一屏推进的——读完一屏再 next，下一屏才有内容；\
+       跳过剧情会永久错过内容（游戏不提供回放）。";
+    schema =
+      obj_schema
+        [
+          ( "action",
+            p_str ~default:"read"
+              "read（只读当前屏）/ next（推进一屏）/ choose（需 option）/ skip（跳过整段）"
+          );
+          ("option", p_int ~minimum:0 "choose 时的选项序号（从 0 开始）");
+        ];
+    with_strip = false;
+    run =
+      (fun args ->
+        let action = String.lowercase_ascii (get_str args "action" "read") in
+        let _ = require_world () in
+        match action with
+        | "read" ->
+            let v = story_view (Game_state.fetch ()) in
+            let clicks = if v.sv_options = [] then [] else option_clicks () in
+            render_story ~clicks v
+        | "next" | "choose" ->
+            let before = story_view (Game_state.fetch ()) in
+            if (not before.sv_is_dialogue) && before.sv_event = None then
+              "当前没有剧情/对话在进行，无需推进。"
+            else begin
+              (match action with
+              | "choose" ->
+                  let opt = get_int args "option" (-1) in
+                  if opt < 0 then
+                    failwith
+                      "choose 需要 option（选项序号，从 0 开始）——先 story action=read 看有哪几个选项。"
+                  else begin
+                    ignore (Game_api.menu_click ~option:opt ());
+                    Printf.eprintf "[junimo-mcp] story: 选了选项 %d\n%!" opt
+                  end
+              | _ -> ignore (Game_api.key ~key:"confirm" ()));
+              (* 等界面真的换屏：台词变了 / 选项变了 / 事件结束 / 对话关掉。 *)
+              let changed () =
+                let v = story_view (Game_state.fetch ()) in
+                v.sv_line <> before.sv_line
+                || v.sv_options <> before.sv_options
+                || v.sv_event <> before.sv_event
+                || v.sv_is_dialogue <> before.sv_is_dialogue
+              in
+              (* ⚠️ **只按一次**。绝不在"没等到变化"时补按第二下——那会跳掉一屏台词，
+                 而剧情是不可回放的（用户明确要求"想玩到剧情"）。等不到就如实报当前状态。 *)
+              ignore (Wait.poll_until ~timeout:3.0 ~interval:0.12 changed);
+              let after = story_view (Game_state.fetch ()) in
+              if (not after.sv_is_dialogue) && after.sv_event = None then
+                "剧情 / 对话已结束（上面那一屏就是最后一句）。"
+              else if
+                after.sv_line = before.sv_line
+                && after.sv_options = before.sv_options
+              then
+                let clicks =
+                  if after.sv_options = [] then [] else option_clicks ()
+                in
+                (if action = "choose" then
+                   "⚠️ 选项似乎没被接受：真机上**剧本事件的问题框**有这个缺陷 —— mod 的 \
+                    answer 接口回包说登记了答案，但对话框不关、事件也不推进（2026-10-15 实测：\
+                    option 点击 / 按 bounds 点坐标 / menu_close / confirm 都不动）。\n\
+                    可以再试 menu_click 按坐标点；都不行就用 story action=skip 跳过整段。\n"
+                 else "这一屏似乎没有变化（多半是过场画面/正在播动画），再 next 一次通常就过去了。\n")
+                ^ render_story ~clicks after
+              else begin
+                let clicks =
+                  if after.sv_options = [] then [] else option_clicks ()
+                in
+                render_story ~clicks after
+              end
+            end
+        | "skip" ->
+            let v = story_view (Game_state.fetch ()) in
+            if v.sv_event = None then "当前没有剧情事件在进行，无需跳过。"
+            else begin
+              ignore (Game_api.key ~key:"skip" ());
+              if
+                Wait.poll_until ~timeout:5.0 ~interval:0.2 (fun () ->
+                    Game_state.active_event (Game_state.fetch ()) = None)
+              then "已跳过整段剧情（跳过的内容不会回放）。"
+              else "已发送跳过，但事件似乎还没结束——可 story action=read 看看当前状态。"
+            end
+        | other ->
+            failwith
+              (Printf.sprintf "未知 action「%s」：只支持 read / next / choose / skip。" other));
   }
 
 let tool_menu_click =
@@ -2219,6 +2452,7 @@ let all : tool list =
     tool_interact;
     tool_press_key;
     tool_menu_read;
+    tool_story;
     tool_menu_click;
     tool_select_item;
     tool_till;
