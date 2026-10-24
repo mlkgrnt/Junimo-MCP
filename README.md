@@ -35,7 +35,7 @@ Agent 会照 `AGENTS.md` 的《部署安装》章节自动完成全部步骤：
 ```
 ┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7842   ┌──────────────────┐
 │ MCP 客户端  │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │ NagiBridge-Remix │ ──► 星露谷
-│  (你的 AI)  │     36 个意图工具     │    (OCaml 5.5)   │     原生 HTTP(socket)   │    (SMAPI mod)   │
+│  (你的 AI)  │     37 个意图工具     │    (OCaml 5.5)   │     原生 HTTP(socket)   │    (SMAPI mod)   │
 └────────────┘                       └──────────────────┘                         └──────────────────┘
 ```
 
@@ -93,7 +93,15 @@ Agent 会照 `AGENTS.md` 的《部署安装》章节自动完成全部步骤：
 | WorkBuddy | `~/.workbuddy/mcp.json` | 图形界面点 Trust |
 | Claude Code | `~/.claude.json` / 项目 `.mcp.json` | `claude mcp add --transport stdio junimo -- "<EXE>"` |
 | Codex | `~/.codex/config.toml` | `codex mcp add junimo -- "<EXE>"` |
-| DeepSeek Harness | `$DSH_HOME/profiles/<name>/cordis.patch.yml` | cordis patch 条目（见 AGENTS.md） |
+| DeepSeek Harness | dsh profile（`dsh plugin add`） | 使用 [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) 插件，一条命令，exe 已内置 |
+
+> **DeepSeek Harness 用户**：无需手工编写 cordis patch。[dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) 已将本项目的 37 个工具封装为 dsh 组合包，内含 `junimo-mcp.exe`、部署自检（`junimo_doctor`）与游戏生命周期工具（聚焦 / 启动 / 读档），以及随包 skill 与操作纪律提示词。
+>
+> ```bash
+> dsh plugin --profile web add github:mlkgrnt/dsh-junimo
+> ```
+>
+> 安装后重启 dsh，先执行 `junimo_doctor` 完成链路检查。
 
 ## 冒烟验证
 
@@ -225,6 +233,7 @@ CI（GitHub Actions，ubuntu）在每次 push / PR 上自动跑：构建 + 单�
 | `AGENTS.md` | **AI Agent** | 部署安装 + 十条铁律 + 37 工具速查 + 开发纪律 |
 | `README.md` | 人类 | 本文件（简体中文 zh-Hans） |
 | `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | 人类 | 繁中 / 英文 / 西语版本 |
+| [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) | DeepSeek Harness 用户 | dsh 插件版：内置 exe、一条命令安装、含部署自检与游戏生命周期工具 |
 | `test/` | 开发者 | 四层测试套件 |
 
 ## 许可与致谢
