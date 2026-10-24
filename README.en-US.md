@@ -35,7 +35,7 @@ You only need two things: ① a Windows machine with *Stardew Valley* installed;
 ```
 ┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7842   ┌──────────────────┐
 │ MCP client │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │ NagiBridge-Remix │ ──► Stardew Valley
-│  (your AI) │    36 intent tools   │    (OCaml 5.5)   │   native HTTP (socket)  │    (SMAPI mod)   │
+│  (your AI) │    37 intent tools   │    (OCaml 5.5)   │   native HTTP (socket)  │    (SMAPI mod)   │
 └────────────┘                       └──────────────────┘                         └──────────────────┘
 ```
 
@@ -93,7 +93,15 @@ It **does not take effect automatically**: in WorkBuddy open *Connector manageme
 | WorkBuddy | `~/.workbuddy/mcp.json` | Click Trust in the GUI |
 | Claude Code | `~/.claude.json` / project `.mcp.json` | `claude mcp add --transport stdio junimo -- "<EXE>"` |
 | Codex | `~/.codex/config.toml` | `codex mcp add junimo -- "<EXE>"` |
-| DeepSeek Harness | `$DSH_HOME/profiles/<name>/cordis.patch.yml` | A cordis patch entry (see AGENTS.md) |
+| DeepSeek Harness | dsh profile (`dsh plugin add`) | Use the [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) plugin — one command, exe bundled |
+
+> **DeepSeek Harness users**: there is no need to hand-write a cordis patch. [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) packages all 37 tools of this project as a dsh bundle. It ships `junimo-mcp.exe`, a deployment doctor (`junimo_doctor`), game lifecycle tools (focus / launch / load save), a bundled skill, and the operating-discipline prompt.
+>
+> ```bash
+> dsh plugin --profile web add github:mlkgrnt/dsh-junimo
+> ```
+>
+> Restart dsh after installing, then run `junimo_doctor` to verify the whole chain.
 
 ## Smoke check
 
@@ -224,6 +232,7 @@ CI (GitHub Actions, ubuntu) runs on every push / PR: build + unit tests + mock s
 |---|---|---|
 | `AGENTS.md` *(Simplified Chinese)* | **AI agents** | Deployment + ten iron rules + 37-tool cheat sheet + development discipline |
 | `README.md` / `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | Humans | Simplified Chinese (zh-Hans, default) / Traditional Chinese / English (this file) / Spanish |
+| [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) | DeepSeek Harness users | dsh plugin: bundled exe, one-command install, deployment doctor and game lifecycle tools |
 | `test/` | Developers | Four-layer test suite |
 
 ## License & credits

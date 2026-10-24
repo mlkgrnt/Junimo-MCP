@@ -35,7 +35,7 @@ Solo necesitas dos cosas: ① un Windows con *Stardew Valley* instalado; ② un 
 ```
 ┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7842   ┌──────────────────┐
 │ Cliente MCP │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │ NagiBridge-Remix │ ──► Stardew Valley
-│  (tu IA)    │   36 herramientas    │    (OCaml 5.5)   │  HTTP nativo (socket)   │    (SMAPI mod)   │
+│  (tu IA)    │   37 herramientas    │    (OCaml 5.5)   │  HTTP nativo (socket)   │    (SMAPI mod)   │
 └────────────┘                       └──────────────────┘                         └──────────────────┘
 ```
 
@@ -93,7 +93,15 @@ Inicia el juego ejecutando `StardewModdingAPI.exe` en la carpeta del juego (**no
 | WorkBuddy | `~/.workbuddy/mcp.json` | Pulsa Trust en la interfaz |
 | Claude Code | `~/.claude.json` / `.mcp.json` del proyecto | `claude mcp add --transport stdio junimo -- "<EXE>"` |
 | Codex | `~/.codex/config.toml` | `codex mcp add junimo -- "<EXE>"` |
-| DeepSeek Harness | `$DSH_HOME/profiles/<name>/cordis.patch.yml` | Una entrada cordis patch (ver AGENTS.md) |
+| DeepSeek Harness | perfil de dsh (`dsh plugin add`) | Usa el plugin [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo): un solo comando, exe incluido |
+
+> **Usuarios de DeepSeek Harness**: no hace falta escribir un cordis patch a mano. [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) empaqueta las 37 herramientas de este proyecto como bundle de dsh. Incluye `junimo-mcp.exe`, un diagnóstico de despliegue (`junimo_doctor`), herramientas de ciclo de vida del juego (enfocar / iniciar / cargar partida), un skill incluido y el prompt de disciplina operativa.
+>
+> ```bash
+> dsh plugin --profile web add github:mlkgrnt/dsh-junimo
+> ```
+>
+> Reinicia dsh tras la instalación y ejecuta `junimo_doctor` para verificar toda la cadena.
 
 ## Comprobación rápida
 
@@ -224,6 +232,7 @@ CI (GitHub Actions, ubuntu) se ejecuta en cada push / PR: compilación + pruebas
 |---|---|---|
 | `AGENTS.md` *(chino simplificado)* | **Agentes de IA** | Despliegue + diez reglas de hierro + referencia de 37 herramientas + disciplina de desarrollo |
 | `README.md` / `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | Humanos | Chino simplificado (zh-Hans, predeterminado) / Chino tradicional / Inglés / Español (este archivo) |
+| [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) | Usuarios de DeepSeek Harness | Plugin para dsh: exe incluido, instalación con un comando, diagnóstico de despliegue y herramientas de ciclo de vida |
 | `test/` | Desarrolladores | Suite de pruebas de cuatro capas |
 
 ## Licencia y créditos
