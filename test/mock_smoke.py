@@ -18,6 +18,15 @@ import sys
 import time
 import urllib.request
 
+# 断言名是中文。Windows 上 Python 的 stdout 默认跟随系统 locale：en-US 是 cp1252，
+# 打印第一个中文断言就直接 UnicodeEncodeError 崩掉（与被测代码无关，纯输出编码）。
+# 显式转 UTF-8：CI 的 runner 按 UTF-8 解码，本地 cmd 里最多是显示乱码，不会崩。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 EXE = os.path.join(ROOT, "_build", "default", "bin", "main.exe")
