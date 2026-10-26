@@ -119,17 +119,24 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag }}
         run: |
-          set -e
+          set -euo pipefail
+          # 只比对二进制本身：.sha256 资产也以 junimo-mcp- 开头，必须排除，
+          # 否则会拿"二进制的 hash"去对".sha256 文件的 digest"，必然不一致。
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --json assets -q '.assets[] | select(.name | startswith("junimo-mcp-")) | .name + "  " + .digest' \
+            --json assets \
+            -q '.assets[] | select(.name | startswith("junimo-mcp-")) | select(.name | endswith(".sha256") | not) | .name + " " + (.digest // "")' \
             > /tmp/remote.txt
           cat /tmp/remote.txt
+          test -s /tmp/remote.txt || { echo "::error::回读为空，没找到任何 junimo-mcp-* 资产"; exit 1; }
           fail=0
           while read -r name hash; do
-            expected="sha256:$(cut -d' ' -f1 "dist/$name")"
+            # ⚠️ 必须读 .sha256 伴生文件。直接 cut 二进制会把二进制当文本吐出来。
+            expected="sha256:$(cut -d' ' -f1 "dist/${name}.sha256")"
             if [ "$expected" != "$hash" ]; then
-              echo "::error::$name 的 digest 不一致：本地 $expected / 远端 $hash"
+              echo "::error::${name} 的 digest 不一致：本地 ${expected} / 远端 ${hash}"
               fail=1
+            else
+              echo "ok  ${name}  ${hash}"
             fi
           done < /tmp/remote.txt
           exit $fail
