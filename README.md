@@ -193,7 +193,9 @@ bash build.sh exec -- ...    # 透传任意 dune 子命令
 
 mock 与真机使用同一代码路径（只换 `STARDEW_API_URL`），mock 的 `/use` 校验语义与真 mod 逐字对齐。
 
-CI（GitHub Actions，ubuntu）在每次 push / PR 上自动跑：构建 + 单元测试 + mock 冒烟。
+CI（GitHub Actions）在每次 push / PR 上跑 **Linux / macOS / Windows 三平台矩阵**：构建 + 单元测试 + mock 冒烟。
+
+这不只是多测一遍，而是**跨平台可行性探针**：`mock_smoke.py` 全程不需要游戏（它自己起一个假 NagiBridge），所以 153 项断言在三平台全绿，即证明内核层不含平台绑定。矩阵绿 ≠ 非 Windows 能玩——端到端还要求执行器 mod 支持，而它的 `/press_key` 与 `/click_tile` 依赖 user32。
 
 ## 环境变量
 

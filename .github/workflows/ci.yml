@@ -1,5 +1,15 @@
 # CI：在全新克隆上完成「构建 + 全部免游戏测试」。
 # 零依赖偏见：唯一的第三方 OCaml 库是 yojson；mock 冒烟只用 Python 标准库。
+#
+# 三平台矩阵的用途不只是"多测一遍"，而是**跨平台可行性探针**：
+# mock_smoke.py 全程不需要游戏（它自己起一个假 NagiBridge），所以 153 项断言
+# 在三平台上跑通，就等于证明了「内核层不含平台绑定」。
+# 若某个 runner 红，说明内核里真的有平台假设，而不是环境问题——
+# 这正是决定"要不要做 macOS/Linux 端到端支持"的实证依据。
+#
+# 注意：端到端仍依赖 NagiBridge-Remix 执行器，其 /press_key 与 /click_tile
+# 走 user32 的 keybd_event / mouse_event，非 Windows 不可用。矩阵绿 ≠
+# 非 Windows 能玩。两者别混为一谈。
 name: CI
 
 on:
@@ -12,8 +22,22 @@ permissions:
 
 jobs:
   build-test:
-    name: 构建与测试（Linux）
-    runs-on: ubuntu-latest
+    name: 构建与测试（${{ matrix.label }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # 不让一个平台失败掩盖其它平台的结果——探针要一次看全。
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux x86_64
+            python: python3
+          - os: macos-latest
+            label: macOS arm64
+            python: python3
+          - os: windows-latest
+            label: Windows x86_64
+            python: python
     steps:
       - name: 检出源码
         uses: actions/checkout@v7
@@ -32,5 +56,6 @@ jobs:
       - name: 单元测试（验证：JSON-RPC 编解码 / 状态解析渲染 / 地块数学）
         run: opam exec -- dune runtest
 
-      - name: mock 冒烟（验证：114 项全流程断言，不需要游戏）
-        run: python3 test/mock_smoke.py
+      # dune 在所有平台都输出 main.exe，mock_smoke.py 的路径假设无需分叉。
+      - name: mock 冒烟（验证：153 项全流程断言，不需要游戏）
+        run: ${{ matrix.python }} test/mock_smoke.py
