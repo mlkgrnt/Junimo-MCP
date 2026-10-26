@@ -25,7 +25,7 @@ Entrega el repositorio a tu cliente de IA (WorkBuddy / Claude Code / Cursor / cu
 El agente seguirá la sección *Despliegue* de `AGENTS.md` y hará todo automáticamente:
 **instalar SMAPI → instalar el mod ejecutor → desplegar el servidor → registrar el conector MCP → verificar que funciona.**
 
-Solo necesitas dos cosas: ① un Windows con *Stardew Valley* instalado; ② un clic en **Trust** durante el registro y reiniciar el cliente.
+Solo necesitas dos cosas: ① un Windows con *Stardew Valley* instalado; ② un clic en **Trust** durante el registro y reiniciar el cliente. (Esa vía del plugin es solo para Windows por ahora — consulta [Plataformas compatibles](#plataformas-compatibles) para macOS / Linux.)
 
 > **Los binarios ya compilados están en Releases**: descarga `junimo-mcp.exe` desde la [última versión](https://github.com/mlkgrnt/Junimo-MCP/releases/latest) (con su archivo de suma de verificación SHA-256) — no hace falta ningún entorno de desarrollo.
 > ¿Prefieres hacerlo a mano? Consulta *Instalación manual*.
@@ -215,6 +215,27 @@ No es solo redundancia: es una **sonda de viabilidad multiplataforma**. `mock_sm
 | `STARDEW_CURL` | autodetectado | Sobrescribe la ruta de curl.exe (solo con `STARDEW_HTTP=curl`) |
 | `STARDEW_NO_STRIP` | sin definir | `=1` desactiva el resumen final de estado |
 | `STARDEW_LOG` | `warn` | Nivel de log en stderr (debug / info / warn) |
+
+## Plataformas compatibles
+
+| Plataforma | Artefacto | Estado |
+|---|---|---|
+| Windows x86_64 | `junimo-mcp.exe` | Plataforma principal de desarrollo; completo de extremo a extremo |
+| Linux x86_64 | `junimo-mcp-linux-x86_64` | Compilado en ubuntu-22.04 (glibc 2.35); supera las 153 aserciones sin juego antes de publicarse |
+| macOS arm64 | `junimo-mcp-macos-arm64` | Compilado en Apple Silicon; supera las mismas aserciones. Sin artefacto para Mac Intel — ejecuta `dune build` |
+
+Cada artefacto incluye un `.sha256` (`<hash>` + dos espacios + nombre de archivo):
+
+```
+https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-linux-x86_64
+https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-macos-arm64
+```
+
+Los produce el flujo [Release binaries](https://github.com/mlkgrnt/Junimo-MCP/actions/workflows/release-binaries.yml). El detalle importante: **cada plataforma ejecuta la suite mock antes de preparar su artefacto**, y el mock impulsa exactamente el archivo que se sube — así que el binario que superó las aserciones es el binario publicado, no «otra versión que compila en algún sitio».
+
+**El alcance, sin ambigüedad.** Lo portable es el **núcleo** (este servidor OCaml). Se comunica por HTTP con el mod ejecutor dentro del juego, y el `/press_key` y `/click_tile` de ese mod llaman a `keybd_event` / `mouse_event` de Windows, sin implementación en macOS ni Linux: esos dos endpoints fallarán. El resto no depende de la plataforma: lectura de estado, movimiento, tareas agrícolas y acceso a menús usan llamadas en proceso, igual que `/click` con un menú abierto o con `no_mouse`.
+
+En resumen: **en macOS y Linux el servidor se compila y funciona directamente; un par de endpoints requieren adaptar el mod.** Para una integración lista para usar en Windows, emplea [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo).
 
 ## Limitaciones conocidas
 

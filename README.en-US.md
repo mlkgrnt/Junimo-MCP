@@ -25,7 +25,7 @@ Hand the repo to your AI client (WorkBuddy / Claude Code / Cursor / any agent th
 The agent will follow the *Deployment* section of `AGENTS.md` and do everything automatically:
 **install SMAPI → install the executor mod → deploy the server → register the MCP connector → verify it works.**
 
-You only need two things: ① a Windows machine with *Stardew Valley* installed; ② one **Trust** click at the registration step, then restart your client.
+You only need two things: ① a Windows machine with *Stardew Valley* installed; ② one **Trust** click at the registration step, then restart your client. (That plugin path is Windows-only for now — see [Platform support](#platform-support) for the macOS / Linux situation.)
 
 > **Prebuilt binaries live in Releases**: grab `junimo-mcp.exe` from the [latest release](https://github.com/mlkgrnt/Junimo-MCP/releases/latest) (with a SHA-256 checksum file) — no dev environment required.
 > Prefer doing it by hand? See *Manual install* below.
@@ -215,6 +215,27 @@ This is not just redundancy — it is a **cross-platform feasibility probe**. `m
 | `STARDEW_CURL` | auto-detected | Override the curl.exe path (only with `STARDEW_HTTP=curl`) |
 | `STARDEW_NO_STRIP` | unset | `=1` disables the trailing state strip |
 | `STARDEW_LOG` | `warn` | stderr log level (debug / info / warn) |
+
+## Platform support
+
+| Platform | Artifact | Status |
+|---|---|---|
+| Windows x86_64 | `junimo-mcp.exe` | Primary development platform; complete end to end |
+| Linux x86_64 | `junimo-mcp-linux-x86_64` | Built on ubuntu-22.04 (glibc 2.35); passes all 153 game-free assertions before release |
+| macOS arm64 | `junimo-mcp-macos-arm64` | Built on Apple Silicon; passes the same assertions. No Intel Mac artifact — run `dune build` yourself |
+
+Each artifact ships with a `.sha256` companion (`<hash>` + two spaces + filename):
+
+```
+https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-linux-x86_64
+https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-macos-arm64
+```
+
+They are produced by the [Release binaries](https://github.com/mlkgrnt/Junimo-MCP/actions/workflows/release-binaries.yml) workflow. The important detail: **each platform runs the mock suite before its artifact is staged**, and the mock drives the very file that gets uploaded — so the binary that passed the assertions is the binary that shipped, not merely "a version that compiles somewhere".
+
+**Scope, stated plainly.** What is portable is the **kernel** (this OCaml server). It talks over HTTP to the in-game executor mod, and that mod's `/press_key` and `/click_tile` call Windows `keybd_event` / `mouse_event`, which have no implementation on macOS or Linux — those two endpoints will fail. Everything else is platform-independent: state reads, movement, farm work and menu access all use in-process calls, as does `/click` when a menu is open or `no_mouse` is set.
+
+In short: **on macOS and Linux the server builds and works directly; a couple of endpoints need the mod adapted.** For an out-of-the-box Windows integration, use [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo).
 
 ## Known limitations
 

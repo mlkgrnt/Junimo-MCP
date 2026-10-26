@@ -25,7 +25,7 @@ git clone https://github.com/mlkgrnt/Junimo-MCP.git
 Agent 會照 `AGENTS.md` 的《部署安裝》章節自動完成所有步驟：
 **裝 SMAPI → 裝執行器 mod → 部署伺服器 → 註冊 MCP 連接器 → 調通驗收。**
 
-你只需要兩件事：① 一台 Windows + 已安裝《星露谷物語》本體；② 在註冊那一步依提示按一次 **Trust** 並重新啟動客戶端。
+你只需要兩件事：① 一台 Windows + 已安裝《星露谷物語》本體；② 在註冊那一步依提示按一次 **Trust** 並重新啟動客戶端。（這條路徑的外掛目前僅 Windows；macOS / Linux 的現況見「[平台支援](#平台支援)」。）
 
 > **成品二進位檔在 Releases**：從[最新發布](https://github.com/mlkgrnt/Junimo-MCP/releases/latest)下載 `junimo-mcp.exe`（附 SHA-256 校驗檔）——不需要安裝任何開發環境。
 > 想自己動手，見下方《手動安裝》。
@@ -215,6 +215,27 @@ CI（GitHub Actions）在每次 push / PR 上跑 **Linux / macOS / Windows 三�
 | `STARDEW_CURL` | 自動偵測 | curl.exe 路徑覆寫（僅 `STARDEW_HTTP=curl` 時用） |
 | `STARDEW_NO_STRIP` | 未設 | `=1` 關閉回傳文字末尾的狀態速報 |
 | `STARDEW_LOG` | `warn` | stderr 日誌等級（debug / info / warn） |
+
+## 平台支援
+
+| 平台 | 產物 | 狀態 |
+|---|---|---|
+| Windows x86_64 | `junimo-mcp.exe` | 主要開發平台，端到端完整可用 |
+| Linux x86_64 | `junimo-mcp-linux-x86_64` | 於 ubuntu-22.04（glibc 2.35）建置，發布前通過全部 153 項免遊戲斷言 |
+| macOS arm64 | `junimo-mcp-macos-arm64` | 於 Apple Silicon 建置，發布前通過同樣斷言。Intel Mac 暫無產物，可自行 `dune build` |
+
+三個產物皆附 `.sha256`（格式 `<hash>` + 兩個空格 + 檔名）：
+
+```
+https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-linux-x86_64
+https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-macos-arm64
+```
+
+它們由 [Release binaries](https://github.com/mlkgrnt/Junimo-MCP/actions/workflows/release-binaries.yml) 工作流建置，關鍵一點：**發布前先在該平台上跑一遍 mock 套件**，而 mock 直接驅動待上傳的那個檔案——所以通過斷言的正是發布出去的二進位，不是「另一個能編譯的版本」。
+
+**範圍要說清。** 跨平台的是**核心**（這個 OCaml 伺服器）。它透過 HTTP 與遊戲內的執行器 mod 通訊，而 mod 的 `/press_key` 與 `/click_tile` 使用 Windows 的 `keybd_event` / `mouse_event`，在 macOS / Linux 上沒有實作，這兩個端點會失敗。其餘工具不依賴平台——讀狀態、走位、農活、選單讀寫都走行程內呼叫，`/click` 在有選單或帶 `no_mouse` 時同樣如此。
+
+也就是說：**macOS / Linux 上可以建置並直接使用本伺服器，少數端點需要自行適配 mod。** 想要開箱即用的 Windows 整合，用 [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo)。
 
 ## 已知限制
 
