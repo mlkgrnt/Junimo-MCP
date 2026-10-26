@@ -1,0 +1,135 @@
+# 发布 macOS / Linux 二进制到**既有** release，不新建版本。
+#
+# 为什么单独一个工作流：
+# - 触发器是 workflow_dispatch（手动），不是 push。发版节奏由 `gh release create` 掌握，
+#   这里只负责「把别的平台的产物挂上去」，不该在每次提交时都跑。
+# - release 是 v3.2.1，不新开 tag。脚本只做 `gh release upload --clobber`。
+#
+# 为什么不碰 junimo-mcp.exe：
+# 那份 Windows 产物是当初发版时构建的，本地 hash、release digest、公开下载实测
+# 三者已校验一致。在这里重建会得到一个 hash 不同的新文件，把那条一致性链打断。
+# Windows 用已有的就够了，这里只补 macOS 与 Linux。
+#
+# 构建配方与 build.sh release 逐字一致：就是普通 `dune build`（不加 --profile release），
+# 取 _build/default/bin/main.exe。所以三平台产物是同一套编译语义。
+#
+# 发布前先在该平台上跑一遍 mock 套件：mock_smoke.py 直接驱动
+# _build/default/bin/main.exe，也就是说**通过 153 项断言的正是要被上传的那个文件**。
+name: Release binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要附加二进制的既有 release tag（不会新建版本）'
+        required: true
+        default: 'v3.2.1'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 构建并自测（${{ matrix.label }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 用 22.04 而非 ubuntu-latest：glibc 2.35 的产物能覆盖更多发行版，
+          # 在 24.04（glibc 2.39）上构建会让老系统跑不起来。
+          - os: ubuntu-22.04
+            label: Linux x86_64
+            asset: junimo-mcp-linux-x86_64
+            python: python3
+          # macos-latest 是 Apple Silicon（arm64）。Intel Mac 未提供产物，
+          # 需要时用 `dune build` 自行构建。
+          - os: macos-latest
+            label: macOS arm64
+            asset: junimo-mcp-macos-arm64
+            python: python3
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v7
+
+      - name: 装配 OCaml 5.5（经 opam）
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.5"
+
+      - name: 安装依赖（唯一的第三方库：yojson）
+        run: opam install --yes yojson
+
+      - name: 构建（与 build.sh release 同参数）
+        run: opam exec -- dune build
+
+      # 先证明产物能用，再允许它被发布。
+      - name: 发布前自测（153 项 mock 断言，跑的就是待发布的这个文件）
+        run: ${{ matrix.python }} test/mock_smoke.py
+
+      - name: 暂存产物并核对文件格式
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp _build/default/bin/main.exe "dist/${{ matrix.asset }}"
+          chmod +x "dist/${{ matrix.asset }}"
+          # 防止拿错平台的产物发出去：这里应该看到 ELF 或 Mach-O。
+          file "dist/${{ matrix.asset }}"
+
+      - name: 上传中间产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish:
+    name: 附加到 release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 汇总各平台产物
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 生成 sha256（格式与既有资产一致：`<hash>` + 两个空格 + 文件名）
+        working-directory: dist
+        run: |
+          for f in junimo-mcp-linux-* junimo-mcp-macos-*; do
+            sha256sum "$f" > "$f.sha256"
+          done
+          ls -l
+
+      - name: 确认目标 release 存在
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName -q '.tagName'
+
+      - name: 上传（不新建版本；--clobber 让重复执行幂等）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: 回读校验（本地 hash == release digest）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -e
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json assets -q '.assets[] | select(.name | startswith("junimo-mcp-")) | .name + "  " + .digest' \
+            > /tmp/remote.txt
+          cat /tmp/remote.txt
+          fail=0
+          while read -r name hash; do
+            expected="sha256:$(cut -d' ' -f1 "dist/$name")"
+            if [ "$expected" != "$hash" ]; then
+              echo "::error::$name 的 digest 不一致：本地 $expected / 远端 $hash"
+              fail=1
+            fi
+          done < /tmp/remote.txt
+          exit $fail
