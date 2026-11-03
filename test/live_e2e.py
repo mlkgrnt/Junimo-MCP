@@ -4,7 +4,7 @@
 
 用法: python live_e2e.py [x] [y] [rows] [length]
      默认地块 (53,12) 2x2（农舍西侧可耕地，M3 实测选点）。
-依赖: 游戏在跑且 NagiBridge :7842 可用；_build/default/bin/main.exe 已构建。
+依赖: 游戏在跑且执行器 mod 可用（默认 JunimoBridge :7850，可用 STARDEW_API_URL 覆盖）；_build/default/bin/main.exe 已构建。
 
 与 mock_smoke.py 的区别：目标是真游戏，不做剧情断言，而是
 1) 逐工具打印回读结果；2) 用独立 HTTP 读回游戏数据做交叉验证（锄后是 HoeDirt、
@@ -21,7 +21,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 EXE = os.path.join(ROOT, "_build", "default", "bin", "main.exe")
-BASE = "http://localhost:7842"
+BASE = os.environ.get("STARDEW_API_URL", "http://localhost:7850")
 
 results = []
 

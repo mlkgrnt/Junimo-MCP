@@ -7,7 +7,7 @@
 以 **OCaml 手寫**的 MCP 伺服器：給 AI Agent 一雙在《星露谷物語》裡幹活的手——**37 個意圖工具（含劇情閱讀與選單關閉）**，從種田採收到取物聚餐、社交過節，全流程可靠執行。
 
 - **協定層**：JSON-RPC 2.0 over stdio，手寫實作（`initialize` / `tools/list` / `tools/call`），零 MCP 框架相依
-- **控制層**：原生 HTTP + keep-alive（OCaml socket）→ [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix)（預設 `http://localhost:7842`）→ 遊戲內角色
+- **控制層**：原生 HTTP + keep-alive（OCaml socket）→ [JunimoBridge](https://github.com/mlkgrnt/junimo-bridge)（預設 `http://localhost:7850`）→ 遊戲內角色；也相容 [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix)（`7842`，用 `STARDEW_API_URL` 指過去）
 - **不假成功**：工具回報成功 = 遊戲裡真的發生了（揮動／澆水後會**回讀地塊直到效果真的落地**才記帳）；失敗大多無副作用（送禮失敗自動退禮、吃東西失敗不扣物），可放心重試
 - **會挑快的路**：`go_to` 一次請求走完全程（出發前就先否掉越界／大門／站不住的座標）；`till`／`water` 在**工具已升級**時自動改用蓄力批量（一片地幾揮搞定）
 - **相依極簡**：唯一的第三方 OCaml 函式庫是 yojson；**執行零外部相依**（HTTP 走原生 socket，不需要系統 curl；`STARDEW_HTTP=curl` 可回退）
@@ -33,8 +33,8 @@ Agent 會照 `AGENTS.md` 的《部署安裝》章節自動完成所有步驟：
 ## 它長什麼樣
 
 ```
-┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7842   ┌──────────────────┐
-│ MCP 客戶端  │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │ NagiBridge-Remix │ ──► 星露谷物語
+┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7850   ┌──────────────────┐
+│ MCP 客戶端  │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │  JunimoBridge    │ ──► 星露谷物語
 │  (你的 AI)  │     37 個意圖工具     │    (OCaml 5.5)   │     原生 HTTP(socket)   │    (SMAPI mod)   │
 └────────────┘                       └──────────────────┘                         └──────────────────┘
 ```
@@ -51,14 +51,16 @@ Agent 會照 `AGENTS.md` 的《部署安裝》章節自動完成所有步驟：
 |---|---|
 | 遊戲 | Stardew Valley **1.6.15**（Steam 版實測） |
 | SMAPI | **4.5.2**（或 4.x 相容版本） |
-| NagiBridge-Remix | **v0.9**（解壓縮到 `Mods/NagiBridge/`） |
+| 執行器 mod | **JunimoBridge v0.1.0**（解壓縮到 `Mods/JunimoBridge/`，連接埠 **7850**）—— 或 [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) v0.9（`Mods/NagiBridge/`，連接埠 7842） |
 | OCaml（僅開發 / 建置需要） | **5.5.0** + dune 3.24 + yojson 3.0（Windows：opam + 受管 Cygwin，見下） |
 
-> ⚠️ **Remix 與原版 NagiBridge 不可同時安裝**：兩者 UniqueID 不同（`pendel001.NagiBridge` vs `Nagi.NagiBridge`），同時安裝會搶佔 7842 連接埠。從原版換裝時，先把舊的 `Mods/NagiBridge/` 資料夾移出 Mods 目錄，再解壓縮新版。
+> **推薦用 JunimoBridge**：它是本專案的姊妹倉庫（同樣 MIT、只實作真正在用的那批端點、報文與 NagiBridge 對齊），從 [Releases](https://github.com/mlkgrnt/junimo-bridge/releases/latest) 下 `JunimoBridge.zip` 解壓縮到 `Mods/` 即可。兩邊報文形狀一致，`junimo-mcp.exe` 不用改一行；換哪個只由 `STARDEW_API_URL` 決定。
 >
-> 授權說明：Remix 為原作授權二改（PolyForm Noncommercial 1.0.0，個人 / 非商業使用免費）；本專案與其透過 HTTP 互動，不打包其程式碼。
+> ⚠️ **兩個 NagiBridge 系（原版 / Remix）別同時裝**：UniqueID 不同（`Nagi.NagiBridge` vs `pendel001.NagiBridge`），同裝會搶佔 7842 連接埠。換裝時把舊的 `Mods/NagiBridge/` 整個移出 Mods 目錄。
+>
+> 授權說明：Remix 為原作授權二改（PolyForm Noncommercial 1.0.0，個人 / 非商業使用免費）；本專案與兩個 mod 都只透過 HTTP 互動，**不打包任何 mod 程式碼**。
 
-啟動遊戲：執行遊戲目錄裡的 `StardewModdingAPI.exe`（**不要從 Steam 啟動**，否則載入不到 mod；代價是 Steam 成就無法使用）。進入存檔後 NagiBridge 會自動在 7842 連接埠啟動服務。
+啟動遊戲：執行遊戲目錄裡的 `StardewModdingAPI.exe`（**不要從 Steam 啟動**，否則載入不到 mod；代價是 Steam 成就無法使用）。進入存檔後，執行器 mod 會在自己的連接埠啟動服務（JunimoBridge = 7850）。
 
 ## 手動安裝（4 個步驟）
 
@@ -67,7 +69,7 @@ Agent 會照 `AGENTS.md` 的《部署安裝》章節自動完成所有步驟：
 | 步驟 | 做什麼 | 要點 |
 |---|---|---|
 | 1 · SMAPI | 安裝 mod 載入器 | 若遊戲目錄已有 `StardewModdingAPI.exe` 則跳過 |
-| 2 · 執行器 mod | 安裝 NagiBridge-Remix | 解壓縮到 `<遊戲目錄>\Mods\`；**如有原版 NagiBridge 必須先移走** |
+| 2 · 執行器 mod | 安裝 JunimoBridge（或 NagiBridge-Remix） | 解壓縮到 `<遊戲目錄>\Mods\`；JunimoBridge 走 7850、Remix 走 7842 |
 | 3 · 伺服器 | 從 [Releases](https://github.com/mlkgrnt/Junimo-MCP/releases/latest) 下載並放好 `junimo-mcp.exe` | 免編譯；建議放非 C 槽、路徑不含空格 |
 | 4 · 註冊 | 寫入 `~/.workbuddy/mcp.json` → Trust → 重新啟動 | 格式見下 |
 
@@ -77,12 +79,14 @@ Agent 會照 `AGENTS.md` 的《部署安裝》章節自動完成所有步驟：
 {
   "mcpServers": {
     "junimo": {
-      "command": "D:/junimo-mcp/junimo-mcp.exe",
-      "env": { "STARDEW_API_URL": "http://localhost:7842" }
+      "command": "D:/junimo-mcp/junimo-mcp.exe"
     }
   }
 }
 ```
+
+> 不用寫 `STARDEW_API_URL`：預設就是 `http://localhost:7850`。只有指到 NagiBridge 時才需要
+> `"env": { "STARDEW_API_URL": "http://localhost:7842" }`。
 
 寫入後**不會自動生效**：到 WorkBuddy「連接器管理 → 右上角自訂連接器」給 `junimo` 按 **Trust**，並重新啟動 WorkBuddy。
 
@@ -107,11 +111,11 @@ Agent 會照 `AGENTS.md` 的《部署安裝》章節自動完成所有步驟：
 
 ```bash
 # 橋接通了嗎（必須加上 --noproxy '*'：繞過系統代理）
-curl -sS --noproxy '*' http://localhost:7842/status
-# {"ok":true,"server":"NagiBridge",...,"worldReady":true,...}
+curl -sS --noproxy '*' http://localhost:7850/status
+# {"ok":true,"server":"JunimoBridge","version":"0.1.0",...,"worldReady":true,...}
 ```
 
-> ⚠️ 位址必須用 `http://localhost:7842`，**不能用 `127.0.0.1`**——mod 的 HttpListener 只註冊了 localhost 前綴，127.0.0.1 會被系統以 400 拒絕（實機實測）。
+> ⚠️ 位址必須用 `http://localhost:7850`，**不能用 `127.0.0.1`**——mod 的 HttpListener 只註冊了 localhost 前綴，127.0.0.1 會被系統以 400 拒絕（實機實測）。同理，命令列呼叫一律帶 `--noproxy '*'`。
 
 ## 工具清單（37）
 
@@ -201,7 +205,7 @@ CI（GitHub Actions）在每次 push / PR 上跑 **Linux / macOS / Windows 三�
 
 | 變數 | 預設 | 說明 |
 |---|---|---|
-| `STARDEW_API_URL` | `http://localhost:7842` | NagiBridge 位址（必須 localhost） |
+| `STARDEW_API_URL` | `http://localhost:7850` | 執行器 mod 位址（必須 localhost）：預設指 JunimoBridge，指 NagiBridge 時寫 `http://localhost:7842` |
 | `STARDEW_HTTP` | `native` | HTTP 實作：`native`（原生 socket + keep-alive）/ `curl`（回退） |
 | `STARDEW_HTTP_TIMEOUT` | `30` | 單次 HTTP 呼叫逾時（秒；批次端點可調大） |
 | `STARDEW_SETTLE` | 自適應 | 通用動作結算等待：不設=自適應（400ms 起，失敗 +150 / 連續成功 −50）；`NNN` 固定毫秒；`fixed` = 舊行為 550ms。農活（till/plant/water）現在按**效果核驗**自訂步，不受此項影響 |
@@ -262,7 +266,8 @@ https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-macos-
 
 本專案自身程式碼以 **MIT** 授權開源，見 [LICENSE](./LICENSE)。
 
-- 執行器 mod：[NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix)（PolyForm Noncommercial 1.0.0，作者 pendel001）——個人 / 非商業使用免費；本專案與其透過 HTTP 互動，不打包其程式碼
+- 執行器 mod（推薦）：[JunimoBridge](https://github.com/mlkgrnt/junimo-bridge)（MIT，本專案的姊妹倉庫）——只實作真正在用的那批端點，報文與 NagiBridge 對齊
+- 執行器 mod（相容）：[NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix)（PolyForm Noncommercial 1.0.0，作者 pendel001）——個人 / 非商業使用免費；本專案與兩者都只透過 HTTP 互動，不打包任何 mod 程式碼
 - 上游原作：[NagiBridge](https://github.com/anqinou-art/NagiBridge)（MIT）
 - 控制層理念與端點語意：NagiBridge 原作者（`farm_row.py` / `water_crops.py` 的站姿 / 時序紀律）
 - 狀態速報（state strip）設計參考 NagiBridge-Remix

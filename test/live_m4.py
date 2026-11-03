@@ -26,7 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from live_e2e import Client, raw_get, check, results  # noqa: E402
 
-BASE = "http://localhost:7842"
+BASE = os.environ.get("STARDEW_API_URL", "http://localhost:7850")
 PLOT = dict(x=54, y=22, rows=3, length=3)
 
 

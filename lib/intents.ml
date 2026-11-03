@@ -2689,7 +2689,7 @@ let call (name : string) (args : Yojson.Safe.t) : (string, string) result =
           Error
             (Printf.sprintf
                "NagiBridge 不可达：确认游戏正在运行且已加载 NagiBridge mod（地址 \
-                http://localhost:7842）。底层错误：%s"
+                http://localhost:7850）。底层错误：%s"
                msg)
       | Game_api.Api_error msg -> Error (friendly_error tool msg)
       | Failure msg -> Error msg

@@ -2,7 +2,7 @@
 
     | 变量            | 默认                     | 说明                     |
     |-----------------|--------------------------|--------------------------|
-    | STARDEW_API_URL | http://localhost:7842    | NagiBridge 地址          |
+    | STARDEW_API_URL | http://localhost:7850    | JunimoBridge 地址        |
     | STARDEW_CURL    | 自动探测                 | curl.exe 路径覆盖        |
     | STARDEW_TIMEOUT | 30                       | 轮询总超时（秒）         |
     | STARDEW_HTTP | native                      | HTTP 实现：native / curl |
@@ -17,8 +17,11 @@
     | STARDEW_NO_STRIP| 未设                     | 设 1 关闭状态速报        |
     | STARDEW_LOG     | warn                     | stderr 日志 debug/info/warn |
 
-    注意：必须使用 localhost 而不是 127.0.0.1——NagiBridge 只注册了
-    http://localhost:<port>/ 前缀，访问 127.0.0.1 会被 HTTP.sys 400 拒绝。 *)
+    注意：必须使用 localhost 而不是 127.0.0.1——mod 只注册了
+    http://localhost:<port>/ 前缀，访问 127.0.0.1 会被 HTTP.sys 400 拒绝。
+
+    默认后端是 **JunimoBridge**（7850，随本仓库一起发）。旧链路 NagiBridge 跑在 7842，
+    需要时用 STARDEW_API_URL 指过去即可，报文形状两边一致。 *)
 
 let getenv name default =
   match Sys.getenv_opt name with
@@ -50,7 +53,7 @@ let warn fmt = log Warn fmt
 
 (* ---------- 配置项 ---------- *)
 
-let api_url () = getenv "STARDEW_API_URL" "http://localhost:7842"
+let api_url () = getenv "STARDEW_API_URL" "http://localhost:7850"
 
 let curl_path () =
   match Sys.getenv_opt "STARDEW_CURL" with

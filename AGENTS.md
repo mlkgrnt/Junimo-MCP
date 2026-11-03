@@ -5,7 +5,7 @@
 
 ## 这是什么
 
-本项目是一个**手写 MCP 服务器**（OCaml，单 exe），通过 NagiBridge-Remix mod 的 HTTP 接口（`localhost:7842`）操控《星露谷物语》里一个角色。提供 **37 个意图工具**，覆盖：感知 / 移动 / 交互 / 界面 / 农活 / 箱子取物 / 吃 / 社交 / 节日 / 生计。
+本项目是一个**手写 MCP 服务器**（OCaml，单 exe），通过**执行器 mod** 的 HTTP 接口（默认 `localhost:7850` = JunimoBridge；也兼容 NagiBridge-Remix 的 `7842`）操控《星露谷物语》里一个角色。提供 **37 个意图工具**，覆盖：感知 / 移动 / 交互 / 界面 / 农活 / 箱子取物 / 吃 / 社交 / 节日 / 生计。
 
 数据流：**你（MCP 客户端）→ stdio JSON-RPC → junimo-mcp.exe → HTTP → mod → 游戏**。你只管调工具；翻译与可靠性（时序等待、游戏侧校验、失败回滚）由服务器内部处理。
 
@@ -30,7 +30,17 @@
 3. 把解压出的全部内容复制进 `<GAME>`
 4. 把 `<GAME>\Stardew Valley.deps.json` 复制一份、改名为 `StardewModdingAPI.deps.json`
 
-### 步骤 3 · 安装 NagiBridge-Remix（执行器 mod）
+### 步骤 3 · 安装执行器 mod
+
+执行器 mod 负责把 HTTP 请求变成游戏里的操作。**首选 JunimoBridge**（本项目的姊妹仓库，MIT，
+只实现真正在用的那批端点，报文与 NagiBridge 对齐）：
+
+1. 从 `https://github.com/mlkgrnt/junimo-bridge/releases/latest/download/JunimoBridge.zip` 下载
+2. 解压，把 `JunimoBridge\` 文件夹**整个**放进 `<GAME>\Mods\`（内含 `JunimoBridge.dll` / `FSharp.Core.dll` / `manifest.json`）
+3. ⚠️ `FSharp.Core.dll` **必须一起放**：缺了 SMAPI 会因 `Failed to resolve assembly` 把整包跳过
+4. 端口 7850；和 NagiBridge-Remix（7842）可以同时装，互不冲突
+
+**或者**沿用 NagiBridge-Remix（兼容路径，端口 7842）：
 
 1. 检查 `<GAME>\Mods\` 下是否已有**原版** NagiBridge（manifest UniqueID = `Nagi.NagiBridge`）——**若有，先移出 Mods 目录**（两者 UniqueID 不同、会抢 7842 端口，不能共存）
 2. 从 `https://github.com/pendel001/NagiBridge-Remix/releases` 下载最新 zip（如 `NagiBridge.0.9.0.zip`）
@@ -61,8 +71,7 @@
 {
   "mcpServers": {
     "junimo": {
-      "command": "<EXE>",
-      "env": { "STARDEW_API_URL": "http://localhost:7842" }
+      "command": "<EXE>"
     }
   }
 }
@@ -79,7 +88,8 @@ claude mcp add --transport stdio junimo -- "<EXE>"
 ```
 
 - 检查：`claude mcp list`（应显示 Connected）；管理：`claude mcp get junimo` / `claude mcp remove junimo`
-- 如需覆盖地址：`claude mcp add --env STARDEW_API_URL=http://localhost:7842 --transport stdio junimo -- "<EXE>"`（`--env` 要放在 `--` 之前）
+- 默认地址就是 `http://localhost:7850`，**不用写 env**；只有指到 NagiBridge 时才要
+  `--env STARDEW_API_URL=http://localhost:7842`（`--env` 要放在 `--` 之前）
 - 团队共享：把 `{"mcpServers":{"junimo":{"command":"<EXE>","env":{...}}}}` 写进项目根的 `.mcp.json`（首次使用会请求批准）
 
 #### Codex（OpenAI）
@@ -89,7 +99,7 @@ claude mcp add --transport stdio junimo -- "<EXE>"
 ```toml
 [mcp_servers.junimo]
 command = "<EXE>"
-env = { STARDEW_API_URL = "http://localhost:7842" }
+# env = { STARDEW_API_URL = "http://localhost:7842" }   # 只有指 NagiBridge 时才取消注释
 ```
 
 - 或一条命令：`codex mcp add junimo -- "<EXE>"`；验证：`codex mcp list`
@@ -108,8 +118,8 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
         transport: stdio
         command: "<EXE>"
         args: []
-        env:
-          STARDEW_API_URL: http://localhost:7842
+        # env:
+        #   STARDEW_API_URL: http://localhost:7842   # 只有指 NagiBridge 时才要；默认 7850
         cwd: !!js process.cwd()
 ```
 
@@ -123,7 +133,7 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 1. 请用户启动游戏：运行 `<GAME>\StardewModdingAPI.exe`（**不要走 Steam 启动**——会加载不到 mod；代价是 Steam 成就不可用，属正常现象）
 2. 调用 `get_state`：
    - 正常返回 = 全链路通了 ✓
-   - "连接失败" = 检查：游戏在跑吗 / `Mods\NagiBridge\` 是否就位（应有 `NagiBridge.dll` + `manifest.json`）/ 7842 是否被占（`netstat -ano | findstr 7842`）
+   - "连接失败" = 检查：游戏在跑吗 / 执行器 mod 是否就位（`Mods\JunimoBridge\` 或 `Mods\NagiBridge\`，应有 dll + `manifest.json`）/ 端口是否被占（`netstat -ano | findstr 7850`）/ 地址是不是写成了 127.0.0.1
    - "还没有进入存档" = 正常，请用户进档后再操作
 3. 确认工具列表为 37 个
 
@@ -131,10 +141,10 @@ env = { STARDEW_API_URL = "http://localhost:7842" }
 
 | 现象 | 原因 / 处理 |
 |---|---|
-| 游戏开着但连不上 | mod 没到位，或旧版 mod 残留（UniqueID 冲突，检查 `Mods` 下是否同时有新旧两个 NagiBridge） |
+| 游戏开着但连不上 | mod 没到位，或旧版 mod 残留（UniqueID 冲突，检查 `Mods` 下是否同时有新旧两个 NagiBridge）；装 JunimoBridge 时若只拷了 `JunimoBridge.dll` 而漏了 `FSharp.Core.dll`，SMAPI 会整包跳过 |
 | 动作"没反应"/报不可达 | ① 有菜单/对话/事件开着（模态界面下动作端点会挂到超时、角色也不能移动）→ 看报错里给的原文与选项处理（`menu_click {"option":N}` / `press_key confirm` / 剧本事件 `press_key skip`）；② **游戏窗口失焦**（SDV 失焦会暂停，动作不生效）→ 把游戏窗口切到前台 |
 | GitHub 下载 exe 缓慢 / 不通 | 换时段或让用户手动下载 Releases；也可从源码构建（见文末《开发 Agent》） |
-| 手写调试请求被拒 | 只能 `http://localhost:7842`（不能 127.0.0.1）；命令行调用要带 `--noproxy '*'`（绕系统代理） |
+| 手写调试请求被拒 | 只能 `http://localhost:7850`（不能 127.0.0.1）；命令行调用要带 `--noproxy '*'`（绕系统代理） |
 | SMAPI 控制台红字 "Steam achievements won't work" | 正常（非 Steam 启动的代价，不影响功能） |
 | 启动报缺 .NET | 装 .NET 6 运行时（Desktop Runtime）；多数机器游戏本体已自带，不会遇到 |
 

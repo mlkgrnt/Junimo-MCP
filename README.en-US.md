@@ -7,7 +7,7 @@
 A **hand-written OCaml** MCP server — a pair of working hands for AI agents in *Stardew Valley*: **37 intent tools** (including story reading and menu closing) covering everything from tilling and harvesting to item pickup, meals, socializing, and festivals, executed reliably end to end.
 
 - **Protocol layer**: JSON-RPC 2.0 over stdio, implemented by hand (`initialize` / `tools/list` / `tools/call`), zero MCP framework dependencies
-- **Control layer**: native HTTP with keep-alive (OCaml sockets) → [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) (default `http://localhost:7842`) → the in-game character
+- **Control layer**: native HTTP with keep-alive (OCaml sockets) → [JunimoBridge](https://github.com/mlkgrnt/junimo-bridge) (default `http://localhost:7850`) → the in-game character; [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) is also supported (`7842`, point `STARDEW_API_URL` at it)
 - **No fake success**: a tool reporting success means it really happened in-game (after a swing or a watering it **reads the tile back until the effect has actually landed** before counting it); most failures have no side effects (a failed gift is returned, a failed meal consumes nothing), so retrying is safe
 - **Takes the fast path**: `go_to` covers the whole route in a single request (out-of-bounds, door/warp, and unreachable targets are rejected before departure); `till`/`water` switch to charged-area batching automatically once the tool is upgraded
 - **Minimal dependencies**: the only third-party OCaml library is yojson; **zero external runtime dependencies** (HTTP over native sockets — no system curl needed; `STARDEW_HTTP=curl` falls back)
@@ -33,8 +33,8 @@ You only need two things: ① a Windows machine with *Stardew Valley* installed;
 ## What it looks like
 
 ```
-┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7842   ┌──────────────────┐
-│ MCP client │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │ NagiBridge-Remix │ ──► Stardew Valley
+┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7850   ┌──────────────────┐
+│ MCP client │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │  JunimoBridge    │ ──► Stardew Valley
 │  (your AI) │    37 intent tools   │    (OCaml 5.5)   │   native HTTP (socket)  │    (SMAPI mod)   │
 └────────────┘                       └──────────────────┘                         └──────────────────┘
 ```
@@ -51,14 +51,16 @@ Engineering highlights:
 |---|---|
 | Game | Stardew Valley **1.6.15** (tested on the Steam version) |
 | SMAPI | **4.5.2** (or a compatible 4.x) |
-| NagiBridge-Remix | **v0.9** (extract into `Mods/NagiBridge/`) |
+| Executor mod | **JunimoBridge v0.1.0** (extract into `Mods/JunimoBridge/`, port **7850**) — or [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) v0.9 (`Mods/NagiBridge/`, port 7842) |
 | OCaml (development / building only) | **5.5.0** + dune 3.24 + yojson 3.0 (Windows: opam + a managed Cygwin, see below) |
 
-> ⚠️ **Remix and the original NagiBridge cannot be installed together**: they have different UniqueIDs (`pendel001.NagiBridge` vs `Nagi.NagiBridge`) and would fight over port 7842. To migrate, move the old `Mods/NagiBridge/` folder out of the Mods directory before extracting the new version.
+> **JunimoBridge is the recommended executor**: it is this project's sibling repo (also MIT, implements only the endpoints we actually use, and keeps its payloads aligned with NagiBridge). Grab `JunimoBridge.zip` from [Releases](https://github.com/mlkgrnt/junimo-bridge/releases/latest) and extract it into `Mods/`. Both mods speak the same payloads, so `junimo-mcp.exe` needs no change — which one is used is decided solely by `STARDEW_API_URL`.
 >
-> Licensing note: Remix is an authorized fork (PolyForm Noncommercial 1.0.0; free for personal / non-commercial use). This project talks to it over HTTP and does not bundle its code.
+> ⚠️ **Do not install two NagiBridge-family mods (original / Remix) side by side**: their UniqueIDs differ (`Nagi.NagiBridge` vs `pendel001.NagiBridge`) and they would fight over port 7842. When switching, move the old `Mods/NagiBridge/` folder out of Mods.
+>
+> Licensing note: Remix is an authorized fork (PolyForm Noncommercial 1.0.0; free for personal / non-commercial use). This project only talks to both mods over HTTP and **bundles no mod code**.
 
-Launch the game by running `StardewModdingAPI.exe` in the game folder (**don't launch via Steam**, or mods won't load; the trade-off is that Steam achievements stay disabled). Once you load a save, NagiBridge serves on port 7842 automatically.
+Launch the game by running `StardewModdingAPI.exe` in the game folder (**don't launch via Steam**, or mods won't load; the trade-off is that Steam achievements stay disabled). Once you load a save, the executor mod starts serving on its own port (JunimoBridge = 7850).
 
 ## Manual install (4 steps)
 
@@ -67,7 +69,7 @@ Launch the game by running `StardewModdingAPI.exe` in the game folder (**don't l
 | Step | What to do | Notes |
 |---|---|---|
 | 1 · SMAPI | Install the mod loader | Skip if `StardewModdingAPI.exe` already exists in the game folder |
-| 2 · Executor mod | Install NagiBridge-Remix | Extract into `<GAME>\Mods\`; **move the original NagiBridge away first if present** |
+| 2 · Executor mod | Install JunimoBridge (or NagiBridge-Remix) | Extract into `<GAME>\Mods\`; JunimoBridge uses 7850, Remix uses 7842 |
 | 3 · Server | Download `junimo-mcp.exe` from [Releases](https://github.com/mlkgrnt/Junimo-MCP/releases/latest) and place it somewhere stable | No build needed; avoid the C: drive and paths with spaces |
 | 4 · Register | Write `~/.workbuddy/mcp.json` → Trust → restart | Format below |
 
@@ -77,12 +79,14 @@ Launch the game by running `StardewModdingAPI.exe` in the game folder (**don't l
 {
   "mcpServers": {
     "junimo": {
-      "command": "D:/junimo-mcp/junimo-mcp.exe",
-      "env": { "STARDEW_API_URL": "http://localhost:7842" }
+      "command": "D:/junimo-mcp/junimo-mcp.exe"
     }
   }
 }
 ```
+
+> No `STARDEW_API_URL` needed: the default is already `http://localhost:7850`. You only need
+> `"env": { "STARDEW_API_URL": "http://localhost:7842" }` when pointing at NagiBridge.
 
 It **does not take effect automatically**: in WorkBuddy open *Connector management → Custom connectors (top right)*, click **Trust** for `junimo`, then restart WorkBuddy.
 
@@ -107,11 +111,11 @@ It **does not take effect automatically**: in WorkBuddy open *Connector manageme
 
 ```bash
 # Is the bridge alive? (the --noproxy '*' flag is required: it bypasses the system proxy)
-curl -sS --noproxy '*' http://localhost:7842/status
-# {"ok":true,"server":"NagiBridge",...,"worldReady":true,...}
+curl -sS --noproxy '*' http://localhost:7850/status
+# {"ok":true,"server":"JunimoBridge","version":"0.1.0",...,"worldReady":true,...}
 ```
 
-> ⚠️ The address must be `http://localhost:7842` — **not `127.0.0.1`**: the mod's HttpListener only registers the localhost prefix, and 127.0.0.1 gets rejected with HTTP 400 (observed in real runs).
+> ⚠️ The address must be `http://localhost:7850` — **not `127.0.0.1`**: the mod's HttpListener only registers the localhost prefix, and 127.0.0.1 gets rejected with HTTP 400 (observed in real runs). Always pass `--noproxy '*'` on the command line, too.
 
 ## Tool reference (37)
 
@@ -201,7 +205,7 @@ This is not just redundancy — it is a **cross-platform feasibility probe**. `m
 
 | Variable | Default | Description |
 |---|---|---|
-| `STARDEW_API_URL` | `http://localhost:7842` | NagiBridge address (must be localhost) |
+| `STARDEW_API_URL` | `http://localhost:7850` | Executor mod address (must be localhost): defaults to JunimoBridge; use `http://localhost:7842` for NagiBridge |
 | `STARDEW_HTTP` | `native` | HTTP implementation: `native` (socket + keep-alive) / `curl` (fallback) |
 | `STARDEW_HTTP_TIMEOUT` | `30` | Per-request HTTP timeout (seconds; raise it for batch endpoints) |
 | `STARDEW_SETTLE` | adaptive | Generic action settle wait: unset = adaptive (starts at 400ms, +150 on failure / −50 after 3 successes); `NNN` fixed ms; `fixed` = legacy 550ms. Farm work (till/plant/water) now paces itself by **effect verification** and ignores this |
@@ -262,7 +266,8 @@ In short: **on macOS and Linux the server builds and works directly; a couple of
 
 This project's own code is open source under the **MIT** license — see [LICENSE](./LICENSE).
 
-- Executor mod: [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) by pendel001 (PolyForm Noncommercial 1.0.0; free for personal / non-commercial use). This project talks to it over HTTP and does not bundle its code.
+- Executor mod (recommended): [JunimoBridge](https://github.com/mlkgrnt/junimo-bridge) (MIT, this project's sibling repo) — implements only the endpoints we actually use, with payloads aligned to NagiBridge
+- Executor mod (compatible): [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) by pendel001 (PolyForm Noncommercial 1.0.0; free for personal / non-commercial use). This project only talks to both mods over HTTP and bundles no mod code.
 - Original upstream: [NagiBridge](https://github.com/anqinou-art/NagiBridge) (MIT)
 - Control-layer philosophy and endpoint semantics: the original NagiBridge author (`farm_row.py` / `water_crops.py` stance and timing discipline)
 - The state strip design references NagiBridge-Remix
