@@ -59,6 +59,7 @@ Agent 會照 `AGENTS.md` 的《部署安裝》章節自動完成所有步驟：
 > ⚠️ **兩個 NagiBridge 系（原版 / Remix）別同時裝**：UniqueID 不同（`Nagi.NagiBridge` vs `pendel001.NagiBridge`），同裝會搶佔 7842 連接埠。換裝時把舊的 `Mods/NagiBridge/` 整個移出 Mods 目錄。
 >
 > 授權說明：Remix 為原作授權二改（PolyForm Noncommercial 1.0.0，個人 / 非商業使用免費）；本專案與兩個 mod 都只透過 HTTP 互動，**不打包任何 mod 程式碼**。
+> JunimoBridge 走 **7850**，可以和 NagiBridge（7842）**並存** —— 本機實測兩個連接埠同時在聽、4 個 mod 同跑無衝突。
 
 啟動遊戲：執行遊戲目錄裡的 `StardewModdingAPI.exe`（**不要從 Steam 啟動**，否則載入不到 mod；代價是 Steam 成就無法使用）。進入存檔後，執行器 mod 會在自己的連接埠啟動服務（JunimoBridge = 7850）。
 

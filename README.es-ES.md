@@ -59,6 +59,7 @@ Puntos destacados:
 > ⚠️ **No instales dos mods de la familia NagiBridge (original / Remix) a la vez**: sus UniqueID son distintos (`Nagi.NagiBridge` frente a `pendel001.NagiBridge`) y se disputarían el puerto 7842. Al cambiar, saca la carpeta antigua `Mods/NagiBridge/` fuera de Mods.
 >
 > Nota de licencia: Remix es una modificación autorizada (PolyForm Noncommercial 1.0.0; gratuita para uso personal / no comercial). Este proyecto solo se comunica con ambos mods por HTTP y **no incluye código de ningún mod**.
+> JunimoBridge escucha en **7850** y puede **convivir** con NagiBridge (7842) — verificado en local: ambos puertos a la escucha, 4 mods cargados, sin conflicto.
 
 Inicia el juego ejecutando `StardewModdingAPI.exe` en la carpeta del juego (**no lo inicies desde Steam**, o los mods no se cargarán; el precio es que los logros de Steam quedan desactivados). Al cargar una partida, el mod ejecutor empieza a servir en su propio puerto (JunimoBridge = 7850).
 

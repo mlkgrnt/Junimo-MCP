@@ -60,6 +60,7 @@ Agent 会照 `AGENTS.md` 的《部署安装》章节自动完成全部步骤：
 >
 > ⚠️ **两个都是 NagiBridge 系的话别同装**：原版 NagiBridge 与 Remix 的 UniqueID 不同（`Nagi.NagiBridge` vs `pendel001.NagiBridge`），
 > 同装会抢 7842 端口。换装时把旧的 `Mods/NagiBridge/` 整个移出 Mods 目录。
+> JunimoBridge 走 **7850**，可以和 NagiBridge（7842）**并存** —— 本机实测两个端口同时在听、4 个 mod 同跑无冲突。
 >
 > 许可说明：Remix 为原作授权二改（PolyForm Noncommercial 1.0.0，个人 / 非商业使用免费）；本项目与两个 mod 都只通过 HTTP 交互，**不打包任何 mod 代码**。
 
