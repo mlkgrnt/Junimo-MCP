@@ -274,3 +274,7 @@ El código de este proyecto es de código abierto bajo licencia **MIT** — ver 
 - Upstream original: [NagiBridge](https://github.com/anqinou-art/NagiBridge) (MIT)
 - Filosofía de la capa de control y semántica de endpoints: el autor original de NagiBridge (disciplina de postura y tiempos en `farm_row.py` / `water_crops.py`)
 - El diseño del resumen de estado (state strip) está inspirado en NagiBridge-Remix
+
+---
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

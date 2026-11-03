@@ -274,3 +274,7 @@ https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-macos-
 - 上游原作：[NagiBridge](https://github.com/anqinou-art/NagiBridge)（MIT）
 - 控制層理念與端點語意：NagiBridge 原作者（`farm_row.py` / `water_crops.py` 的站姿 / 時序紀律）
 - 狀態速報（state strip）設計參考 NagiBridge-Remix
+
+---
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

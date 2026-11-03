@@ -279,3 +279,7 @@ https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-macos-
 - 控制层理念与端点语义：NagiBridge 原作者（`farm_row.py` / `water_crops.py` 的站姿 / 时序纪律）
 - 状态速报（state strip）设计参考 NagiBridge-Remix
 - JunimoBridge 的行为与报文兼容性由同一套真机验收（`live_m4` / `live_e2e` / `live_v3` / `live_swing`）守着
+
+---
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

@@ -1663,6 +1663,35 @@ let tool_harvest =
 
 (* ---------- 生计组（v2 新增） ---------- *)
 
+(* 「翻日 ≠ 已写盘」。mod 的 /sleep 只负责发起睡觉；白天强行触发时游戏会把日期推进到
+   第二天，却跳过存盘环节 —— 实测：回执和 /state 都显示新的一天，存档文件 mtime 纹丝不动，
+   关掉游戏再读档还是前一天。所以"进度已写盘"这句话不能白说，返回前自己核对磁盘。 *)
+let saves_root () =
+  match Sys.getenv_opt "APPDATA" with
+  | Some appdata -> Some (Filename.concat appdata "StardewValley/Saves")
+  | None -> None
+
+(* 存档目录里所有 <存档>/SaveGameInfo 中最新的修改时间；取不到就是 None。 *)
+let latest_save_mtime () =
+  match saves_root () with
+  | None -> None
+  | Some root -> (
+      try
+        Sys.readdir root
+        |> Array.fold_left
+             (fun acc name ->
+               let info =
+                 Filename.concat (Filename.concat root name) "SaveGameInfo"
+               in
+               if Sys.file_exists info then
+                 try
+                   let t = (Unix.stat info).Unix.st_mtime in
+                   Some (match acc with Some a -> max a t | None -> t)
+                 with _ -> acc
+               else acc)
+             None
+      with _ -> None)
+
 let tool_sleep =
   {
     name = "sleep";
@@ -1681,6 +1710,8 @@ let tool_sleep =
             failwith (Printf.sprintf "当前有菜单打开（%s），无法睡觉。请先处理菜单。" m)
         | None -> ());
         let d0 = st0.day in
+        (* 睡之前先记下存档文件的最新时间，睡完拿它比对 —— 见 latest_save_mtime 的注释 *)
+        let save_mtime0 = latest_save_mtime () in
         let res = Game_api.sleep () in
         let ok =
           match Game_state.member "ok" res with Some (`Bool b) -> b | _ -> false
@@ -1733,8 +1764,33 @@ let tool_sleep =
                   p.money
             | None -> "?"
           in
-          Printf.sprintf "睡醒了：%s %d 日（第 %d 年）。%s。进度已写盘。"
-            (Game_state.season_cn st.season) st.day st.year p_desc
+          (* 核对磁盘：睡了 ≠ 写了。白天强触发睡觉时游戏会推进日期但跳过存盘。 *)
+          let wrote =
+            match save_mtime0 with
+            | None -> None
+            | Some t0 ->
+                Some
+                  (Wait.poll_until ~timeout:20.0 ~interval:0.5 (fun () ->
+                       match latest_save_mtime () with
+                       | Some t -> t > t0
+                       | None -> false))
+          in
+          match wrote with
+          | Some false ->
+              failwith
+                (Printf.sprintf
+                   "已翻日到 %s %d 日，但存档文件 20 秒内没有更新 —— 进度很可能没落盘\
+                    （白天强行触发睡觉时游戏会跳过存盘）。建议再睡一觉（正常夜里睡会真正写盘），\
+                    或确认存档目录可写。"
+                   (Game_state.season_cn st.season) st.day)
+          | Some true ->
+              Printf.sprintf
+                "睡醒了：%s %d 日（第 %d 年）。%s。进度已写盘（已核对存档文件时间）。"
+                (Game_state.season_cn st.season) st.day st.year p_desc
+          | None ->
+              Printf.sprintf
+                "睡醒了：%s %d 日（第 %d 年）。%s。已翻日；但取不到存档目录，未能核对是否写盘。"
+                (Game_state.season_cn st.season) st.day st.year p_desc
         end);
   }
 

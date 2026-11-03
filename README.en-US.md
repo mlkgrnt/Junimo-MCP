@@ -274,3 +274,7 @@ This project's own code is open source under the **MIT** license — see [LICENS
 - Original upstream: [NagiBridge](https://github.com/anqinou-art/NagiBridge) (MIT)
 - Control-layer philosophy and endpoint semantics: the original NagiBridge author (`farm_row.py` / `water_crops.py` stance and timing discipline)
 - The state strip design references NagiBridge-Remix
+
+---
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
