@@ -2,6 +2,22 @@
 
 每个版本的完整验收纪要另见 `release/notes-v<版本>.md`；这里只留对使用者的关键变化。
 
+## [3.2.3] - 2026-11-04
+
+### 修复
+- **`press_key` 的方向键真正能走了**。以前 `press_key up/down/left/right` 回
+  「已按键」但游戏里什么都不发生 —— 因为 SDV 的 `options.moveXButton` 默认
+  只绑 `W`/`A`/`S`/`D`，**箭头键压根没绑**，注入 `Keys.Up` 等于按空气。
+  现在由 [JunimoBridge v0.1.1](https://github.com/mlkgrnt/junimo-bridge/releases/tag/v0.1.1)
+  把语义名解析成游戏内实际绑定，改键位也能跟上。
+- **`press_key` 不认识的键名会报错**（以前静默回 ok，看起来成功其实没按）。
+
+### 变更
+- `press_key` 描述里写清：方向名走游戏内绑定、`cancel` 关掉当前一层、
+  要整段跳过对话/事件用 `escape`/`menu`/`skip`。
+- 配套执行器建议升到 **JunimoBridge v0.1.1**（`/key` 的回执新增 `resolvedKeys`，
+  一眼能看出实际按了哪个键）。
+
 ## [3.2.2] - 2026-11-04
 
 ### 变更

@@ -998,9 +998,15 @@ let tool_press_key =
   {
     name = "press_key";
     description =
-      "模拟按键。支持：confirm/action（确认/交互键）、cancel/back（取消/ESC）、\
-       menu（Esc 或开背包）、skip/escape（跳过事件）、up/down/left/right、space、enter、w/a/s/d、f1-f12。\
-       什么时候用：推进对话、关闭菜单、跳过过场。注意：count 为按键次数（默认 1）。";
+      "模拟按键。支持：confirm/action（确认/交互键）、cancel/back（取消）、\
+       menu/escape（Esc 或开背包）、skip（跳过事件）、up/down/left/right（移动/转向）、\
+       space、enter、w/a/s/d、f1-f12。\
+       ⚠️ 方向名会解析成**游戏内实际绑定**（SDV 默认 up/down/left/right = W/S/A/D，\
+       箭头键默认没绑），所以 up/down/left/right 走的是「人真的按 WASD」这条路；\
+       想按字面键就写 w/a/s/d。\
+       什么时候用：推进对话、关闭菜单、跳过过场，以及需要**真按键**才生效的场合。\
+       注意：count 为按键次数（默认 1）。若角色转向但不位移，先确认没卡在\
+       DialogueBox / CanMove=false（gift 或新的一天开场会有）；用 state 看 activeMenu。";
     schema =
       obj_schema
         [
