@@ -197,7 +197,9 @@ Toolchain war stories (setup, Cygwin argument rewriting, the lock pitfall, etc.)
 
 The mock and live modes share the same code path (only `STARDEW_API_URL` changes), and the mock's `/use` validation semantics match the real mod word for word.
 
-CI (GitHub Actions) runs a **Linux / macOS / Windows matrix** on every push / PR: build + unit tests + mock smoke.
+CI (GitHub Actions): **push / PR runs Linux + Windows** (build + unit tests + mock smoke);
+**macOS runs once a day on a schedule**, and also on manual dispatch and on tags — macOS runners on the free tier
+regularly queue for 10+ minutes, which would leave the one useful signal ("did this change pass?") hanging on every push.
 
 This is not just redundancy — it is a **cross-platform feasibility probe**. `mock_smoke.py` needs no game (it spins up a fake NagiBridge), so 153 assertions passing on all three platforms proves the kernel layer carries no platform binding. A green matrix does **not** mean the game is playable off Windows: end-to-end still requires the executor mod, whose `/press_key` and `/click_tile` depend on user32.
 

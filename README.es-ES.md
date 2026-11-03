@@ -197,7 +197,9 @@ Las anécdotas de la cadena de herramientas (montaje, reescritura de argumentos 
 
 El mock y el juego real comparten la misma ruta de código (solo cambia `STARDEW_API_URL`), y la semántica de validación de `/use` del mock coincide palabra por palabra con la del mod real.
 
-CI (GitHub Actions) ejecuta una **matriz Linux / macOS / Windows** en cada push / PR: compilación + pruebas unitarias + humo mock.
+CI (GitHub Actions): **push / PR ejecuta Linux + Windows** (compilación + pruebas unitarias + humo mock);
+**macOS se ejecuta una vez al día por programación**, y también al lanzarlo a mano y en los tags — los runners de macOS
+del plan gratuito suelen hacer cola 10+ minutos, y eso dejaría colgada la única señal útil ("¿pasó este cambio?").
 
 No es solo redundancia: es una **sonda de viabilidad multiplataforma**. `mock_smoke.py` no necesita el juego (levanta un NagiBridge falso), así que 153 aserciones en verde en las tres plataformas demuestran que la capa del núcleo no tiene dependencias de plataforma. Una matriz en verde **no** significa que el juego sea jugable fuera de Windows: de extremo a extremo sigue dependiendo del mod ejecutor, cuyos `/press_key` y `/click_tile` usan user32.
 
