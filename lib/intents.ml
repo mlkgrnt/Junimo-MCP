@@ -2800,7 +2800,7 @@ let tool_fish =
        timeoutMs 是总预算（默认 60s，含等咬钩）。\
        什么时候用：想钓一条鱼时。\
        注意：**尽力而为，且分两层结果** —— ① 打赢钓鱼小游戏（进度打满）；② 物品真正入包。\
-       窗口无焦点时收线动画可能卡住，出现「赢了但没进包」，工具会如实说明，不会拿进度冒充成果。\
+       收线动画在自动化下可能卡住（与窗口焦点无关），出现「赢了但没进包」，工具会如实说明，不会拿进度冒充成果。\
        想自己掌控就用 cast + fishing 一步一步来。";
     schema = obj_schema [ ("timeoutMs", p_int ~minimum:8000 ~maximum:120000 ~default:60000 "总预算毫秒") ];
     with_strip = true;
@@ -2829,7 +2829,7 @@ let tool_fish =
         else if won then
           Printf.sprintf
             "打赢了钓鱼小游戏（进度 %d%%），但**物品没进背包**：%s。\
-             无焦点时收线动画会卡住；给游戏窗口焦点后再看 get_inventory，或改用 cast + fishing 分步操作。"
+             收线动画会卡住（前台同样复现，与焦点无关）；可重试，或改用 cast + fishing 分步操作。"
             (int_of_float (peak *. 100.0)) err
         else
           Printf.sprintf "这次没钓上来：%s。（进度最高到 %d%%；跑鱼是常态，直接重试即可）"
