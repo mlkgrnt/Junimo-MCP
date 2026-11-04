@@ -206,7 +206,7 @@ CI (GitHub Actions): **push / PR ejecuta Linux + Windows** (compilación + prueb
 **macOS se ejecuta una vez al día por programación**, y también al lanzarlo a mano y en los tags — los runners de macOS
 del plan gratuito suelen hacer cola 10+ minutos, y eso dejaría colgada la única señal útil ("¿pasó este cambio?").
 
-No es solo redundancia: es una **sonda de viabilidad multiplataforma**. `mock_smoke.py` no necesita el juego (levanta un NagiBridge falso), así que 153 aserciones en verde en las tres plataformas demuestran que la capa del núcleo no tiene dependencias de plataforma. Una matriz en verde **no** significa que el juego sea jugable fuera de Windows: de extremo a extremo sigue dependiendo del mod ejecutor, cuyos `/press_key` y `/click_tile` usan user32.
+No es solo redundancia: es una **sonda de viabilidad multiplataforma**. `mock_smoke.py` no necesita el juego (levanta un NagiBridge falso), así que 157 aserciones en verde en las tres plataformas demuestran que la capa del núcleo no tiene dependencias de plataforma. Una matriz en verde **no** significa que el juego sea jugable fuera de Windows: de extremo a extremo se necesitan el mod ejecutor y el enfoque de ventana — JunimoBridge inyecta la entrada dentro del proceso (portable), pero `/focus` y la detección de primer plano usan Win32, mientras que `/press_key` y `/click_tile` de NagiBridge usan user32 directamente.
 
 ## Variables de entorno
 
@@ -232,7 +232,7 @@ No es solo redundancia: es una **sonda de viabilidad multiplataforma**. `mock_sm
 | Plataforma | Artefacto | Estado |
 |---|---|---|
 | Windows x86_64 | `junimo-mcp.exe` | Plataforma principal de desarrollo; completo de extremo a extremo |
-| Linux x86_64 | `junimo-mcp-linux-x86_64` | Compilado en ubuntu-22.04 (glibc 2.35); supera las 153 aserciones sin juego antes de publicarse |
+| Linux x86_64 | `junimo-mcp-linux-x86_64` | Compilado en ubuntu-22.04 (glibc 2.35); supera las 157 aserciones sin juego antes de publicarse |
 | macOS arm64 | `junimo-mcp-macos-arm64` | Compilado en Apple Silicon; supera las mismas aserciones. Sin artefacto para Mac Intel — ejecuta `dune build` |
 
 Cada artefacto incluye un `.sha256` (`<hash>` + dos espacios + nombre de archivo):

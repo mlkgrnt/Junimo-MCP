@@ -2,7 +2,7 @@
 # 零依赖偏见：唯一的第三方 OCaml 库是 yojson；mock 冒烟只用 Python 标准库。
 #
 # 三平台矩阵的用途不只是"多测一遍"，而是**跨平台可行性探针**：
-# mock_smoke.py 全程不需要游戏（它自己起一个假 mod），所以 153 项断言
+# mock_smoke.py 全程不需要游戏（它自己起一个假 mod），所以 157 项断言
 # 在三平台上跑通，就等于证明了「内核层不含平台绑定」。
 # 若某个 runner 红，说明内核里真的有平台假设，而不是环境问题——
 # 这正是决定"要不要做 macOS/Linux 端到端支持"的实证依据。
@@ -83,5 +83,5 @@ jobs:
         run: opam exec -- dune runtest
 
       # dune 在所有平台都输出 main.exe，mock_smoke.py 的路径假设无需分叉。
-      - name: mock 冒烟（验证：153 项全流程断言，不需要游戏）
+      - name: mock 冒烟（验证：157 项全流程断言，不需要游戏）
         run: ${{ matrix.python }} test/mock_smoke.py

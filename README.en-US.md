@@ -206,7 +206,7 @@ CI (GitHub Actions): **push / PR runs Linux + Windows** (build + unit tests + mo
 **macOS runs once a day on a schedule**, and also on manual dispatch and on tags — macOS runners on the free tier
 regularly queue for 10+ minutes, which would leave the one useful signal ("did this change pass?") hanging on every push.
 
-This is not just redundancy — it is a **cross-platform feasibility probe**. `mock_smoke.py` needs no game (it spins up a fake NagiBridge), so 153 assertions passing on all three platforms proves the kernel layer carries no platform binding. A green matrix does **not** mean the game is playable off Windows: end-to-end still requires the executor mod, whose `/press_key` and `/click_tile` depend on user32.
+This is not just redundancy — it is a **cross-platform feasibility probe**. `mock_smoke.py` needs no game (it spins up a fake NagiBridge), so 157 assertions passing on all three platforms proves the kernel layer carries no platform binding. A green matrix does **not** mean the game is playable off Windows: end-to-end still needs executor-mod and window-focus support — JunimoBridge injects input in-process (portable) but `/focus` and foreground checks still use Win32, while NagiBridge's `/press_key` and `/click_tile` use user32 directly.
 
 ## Environment variables
 
@@ -232,7 +232,7 @@ This is not just redundancy — it is a **cross-platform feasibility probe**. `m
 | Platform | Artifact | Status |
 |---|---|---|
 | Windows x86_64 | `junimo-mcp.exe` | Primary development platform; complete end to end |
-| Linux x86_64 | `junimo-mcp-linux-x86_64` | Built on ubuntu-22.04 (glibc 2.35); passes all 153 game-free assertions before release |
+| Linux x86_64 | `junimo-mcp-linux-x86_64` | Built on ubuntu-22.04 (glibc 2.35); passes all 157 game-free assertions before release |
 | macOS arm64 | `junimo-mcp-macos-arm64` | Built on Apple Silicon; passes the same assertions. No Intel Mac artifact — run `dune build` yourself |
 
 Each artifact ships with a `.sha256` companion (`<hash>` + two spaces + filename):

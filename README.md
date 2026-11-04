@@ -209,7 +209,7 @@ CI（GitHub Actions）：**push / PR 跑 Linux + Windows**（构建 + 单元测�
 **macOS 每天定时跑一次**，另外手动触发和打 tag 时也会带上 —— 免费档的 macOS runner 排队动辄十几分钟，
 放进每次 push 的关键路径只会让"这次改动过没过"这个唯一有用的信号一直挂着。
 
-这不只是多测一遍，而是**跨平台可行性探针**：`mock_smoke.py` 全程不需要游戏（它自己起一个假 mod），所以 153 项断言在三平台全绿，即证明内核层不含平台绑定。矩阵绿 ≠ 非 Windows 能玩——端到端还要求执行器 mod 支持，而它要往游戏窗口里送键鼠，这部分依赖 user32。
+这不只是多测一遍，而是**跨平台可行性探针**：`mock_smoke.py` 全程不需要游戏（它自己起一个假 mod），所以 157 项断言在三平台全绿，即证明内核层不含平台绑定。矩阵绿 ≠ 非 Windows 能玩——端到端还要执行器 mod 与窗口聚焦支持：JunimoBridge 的虚拟输入走进程内补丁（可移植），但 `/focus` / 前台判据仍依赖 Win32；NagiBridge 的 `/press_key` / `/click_tile` 更是直接用 user32。
 
 ## 环境变量
 
@@ -235,8 +235,8 @@ CI（GitHub Actions）：**push / PR 跑 Linux + Windows**（构建 + 单元测�
 | 平台 | 产物 | 状态 |
 |---|---|---|
 | Windows x86_64 | `junimo-mcp.exe` | 主开发平台，端到端完整可用 |
-| Linux x86_64 | `junimo-mcp-linux-x86_64` | 在 ubuntu-22.04（glibc 2.35）构建，发布前通过全部 153 项免游戏断言 |
-| macOS arm64 | `junimo-mcp-macos-arm64` | 在 Apple Silicon 构建，发布前通过全部 153 项免游戏断言。Intel Mac 暂无产物，可自行 `dune build` |
+| Linux x86_64 | `junimo-mcp-linux-x86_64` | 在 ubuntu-22.04（glibc 2.35）构建，发布前通过全部 157 项免游戏断言 |
+| macOS arm64 | `junimo-mcp-macos-arm64` | 在 Apple Silicon 构建，发布前通过全部 157 项免游戏断言。Intel Mac 暂无产物，可自行 `dune build` |
 
 三个产物都附 `.sha256`（格式 `<hash>` + 两个空格 + 文件名）：
 

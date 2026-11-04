@@ -14,7 +14,7 @@
 # 取 _build/default/bin/main.exe。所以三平台产物是同一套编译语义。
 #
 # 发布前先在该平台上跑一遍 mock 套件：mock_smoke.py 直接驱动
-# _build/default/bin/main.exe，也就是说**通过 153 项断言的正是要被上传的那个文件**。
+# _build/default/bin/main.exe，也就是说**通过 157 项断言的正是要被上传的那个文件**。
 name: Release binaries
 
 on:
@@ -64,7 +64,7 @@ jobs:
         run: opam exec -- dune build
 
       # 先证明产物能用，再允许它被发布。
-      - name: 发布前自测（153 项 mock 断言，跑的就是待发布的这个文件）
+      - name: 发布前自测（157 项 mock 断言，跑的就是待发布的这个文件）
         run: ${{ matrix.python }} test/mock_smoke.py
 
       - name: 暂存产物并核对文件格式
