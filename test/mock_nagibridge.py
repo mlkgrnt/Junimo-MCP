@@ -18,6 +18,7 @@
 
 import argparse
 import json
+import os
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -449,6 +450,18 @@ class World:
 
     def sleep(self, body=None):
         self.need_world()
+        # 真机上睡觉会写存档；mock 里也要让「核对存档时间」这一步看得到变化，
+        # 否则 sleep 工具会判成「翻日但没落盘」。
+        root = os.environ.get("STARDEW_SAVE_DIR")
+        if root:
+            try:
+                d = os.path.join(root, "__mock__")
+                os.makedirs(d, exist_ok=True)
+                p = os.path.join(d, "SaveGameInfo")
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write("mock")
+            except Exception:
+                pass
         self.day += 1
         self.time_of_day = 600
         self.stamina = self.max_stamina

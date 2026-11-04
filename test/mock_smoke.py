@@ -14,6 +14,7 @@ import json
 import os
 import socket
 import subprocess
+import tempfile
 import sys
 import time
 import urllib.request
@@ -146,6 +147,8 @@ TOOLS_EXPECTED = [
     "eat", "gift", "friendship", "find_npc",
     "chest_scan", "chest_take", "chest_take_list",
     "festival", "festival_interact", "festival_answer",
+    # v3.3 钓鱼 / 小游戏
+    "fishing", "cast", "fish", "minigame",
 ]
 
 
@@ -158,7 +161,7 @@ def run_chain(c):
     )
     tl = c.request("tools/list")
     tools = tl.get("result", {}).get("tools", [])
-    check("tools/list: 共 37 个", len(tools) == 37, f"got {len(tools)}")
+    check("tools/list: 共 41 个", len(tools) == 41, f"got {len(tools)}")
     names = {t["name"] for t in tools}
     for n in TOOLS_EXPECTED:
         check(f"工具存在: {n}", n in names)
@@ -539,6 +542,10 @@ def main():
     if not os.path.exists(EXE):
         print(f"ERROR: 未找到 {EXE}，先跑 bash build.sh build")
         return 2
+
+    # 给 sleep 的「核对写盘」指一个假存档目录（否则会去读真实存档，判成没落盘）
+    save_dir = tempfile.mkdtemp(prefix="junimo-save-")
+    os.environ["STARDEW_SAVE_DIR"] = save_dir
 
     mock = subprocess.Popen(
         [PY, MOCK, "--port", str(PORT)],

@@ -222,3 +222,34 @@ let walk_to ~location ~x ~y ?(allow_water = false) ?(allow_warp = false) () =
   in
   Http_client.post_json_json (base () ^ "/walk_to")
     (Yojson.Safe.to_string (`Assoc fields))
+
+(* ---------- v3.3 钓鱼 / 小游戏 ---------- *)
+
+let fishing () = Http_client.get_json ~max_time:8 (base () ^ "/fishing") |> check
+
+let water ?(radius = 8) () =
+  let r = max 1 (min 40 radius) in
+  Http_client.get_json ~max_time:8 (Printf.sprintf "%s/water?radius=%d" (base ()) r)
+  |> check
+
+let cast ?(ms = 420) () =
+  post_ep ~max_time:30 "/cast" (`Assoc [ ("ms", `Int ms) ])
+
+let fish ?(timeoutMs = 60000) () =
+  (* 全自动要等咬钩 + 搏鱼，给足时间；mod 侧自己也会按预算收尾 *)
+  (* 秒：预算 + 20s 余量（mod 侧自己会按预算收尾，这里只是别让 HTTP 先断） *)
+  post_ep ~max_time:(timeoutMs / 1000 + 25) "/fish"
+    (`Assoc [ ("timeoutMs", `Int timeoutMs) ])
+
+let bar () = Http_client.get_json ~max_time:6 (base () ^ "/debug/bar") |> check
+
+let minigame ?(limit = 40) () =
+  let n = max 1 (min 120 limit) in
+  Http_client.get_json ~max_time:8 (Printf.sprintf "%s/minigame?limit=%d" (base ()) n)
+  |> check
+
+let minigame_key ~key ?(holdMs = 90) () =
+  post_ep ~max_time:10 "/minigame/key"
+    (`Assoc [ ("key", `String key); ("holdMs", `Int holdMs) ])
+
+let minigame_quit () = post_ep ~max_time:10 "/minigame/quit" (`Assoc [])

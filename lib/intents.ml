@@ -1667,9 +1667,14 @@ let tool_harvest =
    第二天，却跳过存盘环节 —— 实测：回执和 /state 都显示新的一天，存档文件 mtime 纹丝不动，
    关掉游戏再读档还是前一天。所以"进度已写盘"这句话不能白说，返回前自己核对磁盘。 *)
 let saves_root () =
-  match Sys.getenv_opt "APPDATA" with
-  | Some appdata -> Some (Filename.concat appdata "StardewValley/Saves")
-  | None -> None
+  (* STARDEW_SAVE_DIR 优先：给离线测试指一个假存档目录，
+     否则本机跑 mock 时会读到**真实存档**，把「睡了但没写盘」误判成失败。 *)
+  match Sys.getenv_opt "STARDEW_SAVE_DIR" with
+  | Some dir when dir <> "" -> Some dir
+  | _ -> (
+      match Sys.getenv_opt "APPDATA" with
+      | Some appdata -> Some (Filename.concat appdata "StardewValley/Saves")
+      | None -> None)
 
 (* 存档目录里所有 <存档>/SaveGameInfo 中最新的修改时间；取不到就是 None。 *)
 let latest_save_mtime () =
@@ -2659,6 +2664,256 @@ let tool_festival_answer =
           (Game_state.get_str res [ "method" ]));
   }
 
+(* ---------- v3.3 钓鱼 / 小游戏 ---------- *)
+
+(* 把小游戏的实时局面收成一行，比丢原始 JSON 好读。 *)
+let render_bar (j : Yojson.Safe.t) =
+  let f k =
+    match Game_state.member k j with Some v -> Game_state.to_float v | None -> 0.0
+  in
+
+  let i k =
+    match Game_state.member k j with Some v -> Game_state.to_int v | None -> 0
+  in
+
+  let inbar = match Game_state.member "inBar" j with Some (`Bool b) -> b | _ -> false in
+  let pressing = match Game_state.member "pressing" j with Some (`Bool b) -> b | _ -> false in
+  Printf.sprintf "进度 %d%%｜绿条 %d-%d｜鱼 %d｜难度 %d｜%s%s"
+    (int_of_float (f "progress" *. 100.0))
+    (i "barTop") (i "barTop" + i "barHeight") (i "fishY")
+    (int_of_float (f "difficulty"))
+    (if inbar then "鱼在条内" else "鱼在条外")
+    (if pressing then "（按住）" else "")
+
+let tool_fishing =
+  {
+    name = "fishing";
+    description =
+      "看钓鱼状态：有没有鱼竿、是否握在手上、浮标落在哪、在等咬钩还是已经咬钩，\
+       以及（搏鱼时）小游戏的实时局面 —— 进度百分比、绿条区间、鱼的位置、难度。\
+       radius>0 时**顺带找钓点**：附近哪些格有水、站哪一格抛得到。\
+       什么时候用：想钓鱼之前先看这里挑位置；钓的过程中查进度、判断要不要重抛。\
+       注意：没竿会如实回 hasRod=false；抛竿用 cast，全自动钓一条用 fish。";
+    schema = obj_schema [ ("radius", p_int ~minimum:0 ~maximum:40 ~default:0 "找钓点的半径，0=不找") ];
+    with_strip = false;
+    run =
+      (fun args ->
+        let _ = require_world () in
+        let st = Game_api.fishing () in
+        let buf = Buffer.create 320 in
+        let has_rod =
+          match Game_state.member "hasRod" st with Some (`Bool b) -> b | _ -> false
+        in
+        if not has_rod then
+          Buffer.add_string buf "没有鱼竿：先去 Willy 那里拿一根（钓鱼线不开局就钓不了）。\n"
+        else begin
+          let holding =
+            match Game_state.member "holdingRod" st with Some (`Bool b) -> b | _ -> false
+          in
+          let fishing =
+            match Game_state.member "isFishing" st with Some (`Bool b) -> b | _ -> false
+          in
+          let nibbling =
+            match Game_state.member "isNibbling" st with Some (`Bool b) -> b | _ -> false
+          in
+          let is_cast =
+            match Game_state.member "isCasting" st with Some (`Bool b) -> b | _ -> false
+          in
+          let lvl = Game_state.member "fishingLevel" st in
+          Buffer.add_string buf
+            (Printf.sprintf "鱼竿：%s｜钓鱼等级 %d\n"
+               (if holding then "在手上" else "在背包里（抛竿会自动切过去）")
+               (match lvl with Some v -> Game_state.to_int v | None -> 0));
+          (match Game_state.member "bar" st with
+          | Some (`Assoc _ as bar) -> Buffer.add_string buf ("搏鱼中：" ^ render_bar bar ^ "\n")
+          | _ ->
+              if nibbling then Buffer.add_string buf "**已经咬钩了**：鱼在钩上，窗口很短，赶紧提竿（fish 会自动处理）。\n"
+              else if fishing then
+                let bite =
+                  match Game_state.member "biteInMs" st with Some v -> Game_state.to_float v | None -> 0.0
+                in
+                Buffer.add_string buf
+                  (Printf.sprintf "浮标在水里，等咬钩（约 %.0f 秒后）。别乱按，按了会把鱼吓跑。\n" (bite /. 1000.0))
+              else if is_cast then Buffer.add_string buf "正在蓄力抛竿。\n"
+              else Buffer.add_string buf "没在钓鱼。\n")
+        end;
+        (match arg_int args "radius" with
+        | Some r when r > 0 ->
+            let w = Game_api.water ~radius:r () in
+            let n = match Game_state.member "count" w with Some v -> Game_state.to_int v | None -> 0 in
+            if n = 0 then Buffer.add_string buf "附近没有水。\n"
+            else begin
+              Buffer.add_string buf (Printf.sprintf "附近 %d 格水。钓点（站这格抛得到）：" n);
+              (match Game_state.member "spots" w with
+              | Some (`List spots) ->
+                  List.iteri
+                    (fun idx s ->
+                      if idx < 3 then
+                        Buffer.add_string buf
+                          (Printf.sprintf " (%d,%d)→水(%d,%d)"
+                             (Game_state.get_int s [ "standX" ])
+                             (Game_state.get_int s [ "standY" ])
+                             (Game_state.get_int s [ "waterX" ])
+                             (Game_state.get_int s [ "waterY" ])))
+                    spots
+              | _ -> ());
+              Buffer.add_string buf "\n"
+            end
+        | _ -> ());
+        Buffer.contents buf);
+  }
+
+let tool_cast =
+  {
+    name = "cast";
+    description =
+      "抛竿：按住「使用」蓄力再松手，`ms` 是按住时长（越大越远，约等于 castPower=ms/1000）。\
+       什么时候用：自己掌控节奏时（先 cast 看一眼，再等咬钩、手动 fish）；\
+       想要一步到位用 fish。\
+       注意：必须面向水面且贴身是水；失败会重试一次，仍失败说明对着陆地/障碍。\
+       抛完别乱按 —— 等 fishing 报 isNibbling=true 才算咬钩。";
+    schema = obj_schema [ ("ms", p_int ~minimum:60 ~maximum:2000 ~default:420 "按住毫秒数") ];
+    with_strip = true;
+    run =
+      (fun args ->
+        let ms = match arg_int args "ms" with Some v -> v | None -> 420 in
+        let _ = require_world () in
+        let res = Game_api.cast ~ms () in
+        let ok = match Game_state.member "ok" res with Some (`Bool b) -> b | _ -> false in
+        if not ok then begin
+          let err =
+            match Game_state.member "error" res with Some v -> Game_state.to_str v | None -> "未知错误"
+          in
+          failwith (Printf.sprintf "抛竿失败：%s（先 fishing，它会告诉你附近哪格有水）" err)
+        end;
+        Printf.sprintf "已抛竿：蓄力 %.2f，浮标 (%d,%d)。等咬钩，别乱按。"
+          (match Game_state.member "castPower" res with Some v -> Game_state.to_float v | None -> 0.0)
+          (Game_state.get_int res [ "bobberTile"; "x" ])
+          (Game_state.get_int res [ "bobberTile"; "y" ]));
+  }
+
+let tool_fish =
+  {
+    name = "fish";
+    description =
+      "全自动钓一条：抛竿 → 等咬钩 → 提竿 → 打钓鱼小游戏（自动控绿条）→ 结算。\
+       timeoutMs 是总预算（默认 60s，含等咬钩）。\
+       什么时候用：想钓一条鱼时。\
+       注意：**尽力而为，且分两层结果** —— ① 打赢钓鱼小游戏（进度打满）；② 物品真正入包。\
+       窗口无焦点时收线动画可能卡住，出现「赢了但没进包」，工具会如实说明，不会拿进度冒充成果。\
+       想自己掌控就用 cast + fishing 一步一步来。";
+    schema = obj_schema [ ("timeoutMs", p_int ~minimum:8000 ~maximum:120000 ~default:60000 "总预算毫秒") ];
+    with_strip = true;
+    run =
+      (fun args ->
+        let timeoutMs = match arg_int args "timeoutMs" with Some v -> v | None -> 60000 in
+        let _ = require_world () in
+        let res = Game_api.fish ~timeoutMs () in
+        let ok = match Game_state.member "ok" res with Some (`Bool b) -> b | _ -> false in
+        let peak =
+          match Game_state.member "progressPeak" res with Some v -> Game_state.to_float v | None -> 0.0
+        in
+        let items =
+          match Game_state.member "caughtItems" res with
+          | Some (`List xs) when xs <> [] ->
+              String.concat "、" (List.map (fun it -> Game_state.get_str it [ "name" ]) xs)
+          | _ -> ""
+        in
+        let won = match Game_state.member "won" res with Some (`Bool b) -> b | _ -> peak >= 0.999 in
+        let err =
+          match Game_state.member "error" res with Some v -> Game_state.to_str v | None -> "未知原因"
+        in
+        if ok then
+          Printf.sprintf "钓到了（进度 %d%%）。入包：%s"
+            (int_of_float (peak *. 100.0)) (if items = "" then "(稍后 get_inventory 核对)" else items)
+        else if won then
+          Printf.sprintf
+            "打赢了钓鱼小游戏（进度 %d%%），但**物品没进背包**：%s。\
+             无焦点时收线动画会卡住；给游戏窗口焦点后再看 get_inventory，或改用 cast + fishing 分步操作。"
+            (int_of_float (peak *. 100.0)) err
+        else
+          Printf.sprintf "这次没钓上来：%s。（进度最高到 %d%%；跑鱼是常态，直接重试即可）"
+            err (int_of_float (peak *. 100.0)));
+  }
+
+let tool_minigame =
+  {
+    name = "minigame";
+    description =
+      "小游戏（Junimo Kart / Prairie King / 飞镖 / 抓娃娃 等）的统一入口。\
+       action=read 看现在有没有小游戏在跑、是哪个、关键局面字段；\
+       action=key 直接喂按键（`key` 用**字面键名**：space/enter/left/right/up/down/w/a/s/d/escape，\
+       小游戏不看游戏的键位绑定）；action=quit 退出小游戏（卡住时唯一的出路）。\
+       什么时候用：小游戏开始后先 read 认清是哪个，再用 key 操作；不想玩了 quit。\
+       注意：这些游戏是实时反应型的，靠一帧一帧喂键很吃节奏，能玩但不保证成绩。";
+    schema =
+      obj_schema
+        [
+          ("action", p_str ~default:"read" "read / key / quit");
+          ("key", p_str "action=key 时的键名（字面键，如 space / left / enter）");
+          ("holdMs", p_int ~minimum:30 ~maximum:3000 ~default:90 "按住毫秒数（action=key）");
+          ("limit", p_int ~minimum:1 ~maximum:120 ~default:40 "read 时展示多少字段");
+        ];
+    with_strip = false;
+    run =
+      (fun args ->
+        let action =
+          match arg_str args "action" with Some s -> String.lowercase_ascii s | None -> "read"
+        in
+        let _ = require_world () in
+        match action with
+        | "read" ->
+            let limit = match arg_int args "limit" with Some v -> v | None -> 40 in
+            let res = Game_api.minigame ~limit () in
+            let active =
+              match Game_state.member "active" res with Some (`Bool b) -> b | _ -> false
+            in
+            if not active then "当前没有小游戏在跑。"
+            else begin
+              let buf = Buffer.create 256 in
+              Buffer.add_string buf
+                (Printf.sprintf "小游戏：%s（%s）\n"
+                   (Game_state.get_str res [ "id" ])
+                   (Game_state.get_str res [ "type" ]));
+              (match Game_state.member "fields" res with
+              | Some (`Assoc fs) ->
+                  List.iter
+                    (fun (k, v) ->
+                      Buffer.add_string buf
+                        (Printf.sprintf "  %s = %s\n" k
+                           (match v with
+                           | `Bool b -> string_of_bool b
+                           | `Int n -> string_of_int n
+                           | `Float f -> Printf.sprintf "%.2f" f
+                           | `String s -> s
+                           | _ -> "<obj>")))
+                    fs
+              | _ -> ());
+              Buffer.contents buf
+            end
+        | "key" -> (
+            match arg_str args "key" with
+            | None | Some "" -> failwith "action=key 需要 key（比如 space / left）"
+            | Some key ->
+                let holdMs = match arg_int args "holdMs" with Some v -> v | None -> 90 in
+                let res = Game_api.minigame_key ~key ~holdMs () in
+                let ok = match Game_state.member "ok" res with Some (`Bool b) -> b | _ -> false in
+                if not ok then begin
+                  let err =
+                    match Game_state.member "error" res with Some v -> Game_state.to_str v | None -> "未知错误"
+                  in
+                  failwith (Printf.sprintf "小游戏按键失败：%s" err)
+                end;
+                let still =
+                  match Game_state.member "stillActive" res with Some (`Bool b) -> b | _ -> false
+                in
+                Printf.sprintf "已按 %s（%dms）。小游戏%s。" key holdMs (if still then "还在跑" else "已结束"))
+        | "quit" ->
+            let _ = Game_api.minigame_quit () in
+            "已退出小游戏。"
+        | other -> failwith (Printf.sprintf "action 只能是 read / key / quit，收到 %s" other));
+  }
+
 let all : tool list =
   [
     tool_get_state;
@@ -2700,6 +2955,11 @@ let all : tool list =
     tool_festival;
     tool_festival_interact;
     tool_festival_answer;
+    (* v3.3 钓鱼 / 小游戏 *)
+    tool_fishing;
+    tool_cast;
+    tool_fish;
+    tool_minigame;
   ]
 
 (* ---------- 注册表接口 ---------- *)
