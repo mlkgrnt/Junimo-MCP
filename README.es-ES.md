@@ -4,7 +4,7 @@
 
 [简体中文](README.md) · [繁體中文](README.zh-Hant.md) · [English](README.en-US.md) · **Español**
 
-Un servidor MCP **escrito a mano en OCaml**: un par de manos trabajadoras para agentes de IA en *Stardew Valley* — **37 herramientas de intención** (incluida la lectura de la historia y el cierre de menús), desde labrar y cosechar hasta recoger objetos, comer, socializar y disfrutar de los festivales, con una ejecución fiable de principio a fin.
+Un servidor MCP **escrito a mano en OCaml**: un par de manos trabajadoras para agentes de IA en *Stardew Valley* — **41 herramientas de intención** (incluida la lectura de la historia y el cierre de menús), desde labrar y cosechar hasta recoger objetos, comer, socializar y disfrutar de los festivales, con una ejecución fiable de principio a fin.
 
 - **Capa de protocolo**: JSON-RPC 2.0 sobre stdio, implementado a mano (`initialize` / `tools/list` / `tools/call`), sin dependencias de frameworks MCP
 - **Capa de control**: HTTP nativo con keep-alive (sockets de OCaml) → [JunimoBridge](https://github.com/mlkgrnt/junimo-bridge) (por defecto `http://localhost:7850`) → el personaje del juego; también compatible con [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) (`7842`, apuntando `STARDEW_API_URL` allí)
@@ -35,7 +35,7 @@ Solo necesitas dos cosas: ① un Windows con *Stardew Valley* instalado; ② un 
 ```
 ┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7850   ┌──────────────────┐
 │ Cliente MCP │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │  JunimoBridge    │ ──► Stardew Valley
-│  (tu IA)    │   37 herramientas    │    (OCaml 5.5)   │  HTTP nativo (socket)   │    (SMAPI mod)   │
+│  (tu IA)    │   41 herramientas    │    (OCaml 5.5)   │  HTTP nativo (socket)   │    (SMAPI mod)   │
 └────────────┘                       └──────────────────┘                         └──────────────────┘
 ```
 
@@ -51,7 +51,7 @@ Puntos destacados:
 |---|---|
 | Juego | Stardew Valley **1.6.15** (probado en la versión de Steam) |
 | SMAPI | **4.5.2** (o una versión 4.x compatible) |
-| Mod ejecutor | **JunimoBridge v0.1.0** (descomprimir en `Mods/JunimoBridge/`, puerto **7850**) — o [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) v0.9 (`Mods/NagiBridge/`, puerto 7842) |
+| Mod ejecutor | **JunimoBridge v0.3.2** (descomprimir en `Mods/JunimoBridge/`, puerto **7850**) — o [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) v0.9 (`Mods/NagiBridge/`, puerto 7842) |
 | OCaml (solo para desarrollo / compilación) | **5.5.0** + dune 3.24 + yojson 3.0 (en Windows: opam + Cygwin gestionado; ver abajo) |
 
 > **Se recomienda JunimoBridge**: es el repositorio hermano de este proyecto (también MIT, implementa solo los endpoints que realmente usamos y mantiene los payloads alineados con NagiBridge). Descarga `JunimoBridge.zip` de [Releases](https://github.com/mlkgrnt/junimo-bridge/releases/latest) y descomprímelo en `Mods/`. Ambos mods hablan los mismos payloads, así que `junimo-mcp.exe` no cambia: cuál se usa lo decide solo `STARDEW_API_URL`.
@@ -100,7 +100,7 @@ Inicia el juego ejecutando `StardewModdingAPI.exe` en la carpeta del juego (**no
 | Codex | `~/.codex/config.toml` | `codex mcp add junimo -- "<EXE>"` |
 | DeepSeek Harness | perfil de dsh (`dsh plugin add`) | Usa el plugin [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo): un solo comando, exe incluido |
 
-> **Usuarios de DeepSeek Harness**: no hace falta escribir un cordis patch a mano. [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) empaqueta las 37 herramientas de este proyecto como bundle de dsh. Incluye `junimo-mcp.exe`, un diagnóstico de despliegue (`junimo_doctor`), herramientas de ciclo de vida del juego (enfocar / iniciar / cargar partida), un skill incluido y el prompt de disciplina operativa.
+> **Usuarios de DeepSeek Harness**: no hace falta escribir un cordis patch a mano. [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) empaqueta las 41 herramientas de este proyecto como bundle de dsh. Incluye `junimo-mcp.exe`, un diagnóstico de despliegue (`junimo_doctor`), herramientas de ciclo de vida del juego (enfocar / iniciar / cargar partida), un skill incluido y el prompt de disciplina operativa.
 >
 > ```bash
 > dsh plugin --profile web add github:mlkgrnt/dsh-junimo
@@ -118,7 +118,7 @@ curl -sS --noproxy '*' http://localhost:7850/status
 
 > ⚠️ La dirección debe ser `http://localhost:7850`, **no `127.0.0.1`**: el HttpListener del mod solo registra el prefijo localhost, y 127.0.0.1 se rechaza con un 400 (comprobado en el juego real). En la línea de comandos, añade siempre `--noproxy '*'`.
 
-## Lista de herramientas (37)
+## Lista de herramientas (41)
 
 | Grupo | Herramienta | Descripción |
 |---|---|---|
@@ -159,6 +159,10 @@ curl -sS --noproxy '*' http://localhost:7850/status
 | | `map_info` | Edificios / teletransportes / NPC / animales (para planificar rutas) |
 | | `pause_time` | Congelar el reloj del juego (evita desmayos en tareas largas; recuerda reanudarlo) |
 | | `resume_time` | Reanudar el reloj congelado |
+| Pesca | `fishing` | Estado de la caña + zonas de agua cercanas (`radius>0` indica dónde plantarse y hacia dónde lanzar) |
+| | `cast` | Lanzamiento con carga; `ms` controla la distancia, con un reintento automático |
+| | `fish` | Captura automática. Resultado con `won` / `delivered` / `directCatch` — **solo cuenta `delivered`** |
+| Minijuegos | `minigame` | `read` / `key` / `quit`; los nombres de tecla son teclas físicas literales |
 
 Disciplina común de las tareas agrícolas: colocarse en `(tx, ty-1)` mirando hacia abajo → **teletransporte + relectura de verificación precisa** → `/use` (comprobar que la casilla devuelta == la esperada) → settle 0.55s; cada fallo se lista con su motivo — nunca se usa la herramienta a ciegas.
 
@@ -246,6 +250,8 @@ En resumen: **en macOS y Linux el servidor se compila y funciona directamente; u
 
 ## Limitaciones conocidas
 
+- **`fish` devuelve tres indicadores**: `won` = se ganó el minijuego, `delivered` = el objeto entró realmente al inventario, `directCatch` = chatarra entregada sin minijuego. No confundas `progressPeak=1` con una captura. **Que salga chatarra es comportamiento del juego** (el `getFish` del estanque), no un fallo.
+
 - **Capturas / vídeo no disponibles**: GDI no captura el fotograma OpenGL en esta máquina — la verificación se apoya en lecturas de la API del juego (más precisas, además).
 - **Movimiento de larga distancia**: el BFS del mod tiene un tope de 500 pasos; `go_to` lo sortea con tramos integrados (≤10 casillas por tramo). Para cruzar mapas usa `warp`.
 - **Poner nombre a una mascota (NamingMenu) es un punto ciego del mod**: `/menu` no expone ni su caja de texto ni sus botones. La salida de las herramientas te dice que hacer: `menu_click {"x":800,"y":352}` acepta el nombre por defecto (verificado en 16:9), `press_key cancel` retrocede.
@@ -260,7 +266,7 @@ En resumen: **en macOS y Linux el servidor se compila y funciona directamente; u
 
 | Documento | Para quién | Contenido |
 |---|---|---|
-| `AGENTS.md` *(chino simplificado)* | **Agentes de IA** | Despliegue + diez reglas de hierro + referencia de 37 herramientas + disciplina de desarrollo |
+| `AGENTS.md` *(chino simplificado)* | **Agentes de IA** | Despliegue + diez reglas de hierro + referencia de 41 herramientas + disciplina de desarrollo |
 | `README.md` / `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | Humanos | Chino simplificado (zh-Hans, predeterminado) / Chino tradicional / Inglés / Español (este archivo) |
 | [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) | Usuarios de DeepSeek Harness | Plugin para dsh: exe incluido, instalación con un comando, diagnóstico de despliegue y herramientas de ciclo de vida |
 | `test/` | Desarrolladores | Suite de pruebas de cuatro capas |

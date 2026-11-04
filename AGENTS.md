@@ -5,7 +5,7 @@
 
 ## 这是什么
 
-本项目是一个**手写 MCP 服务器**（OCaml，单 exe），通过**执行器 mod** 的 HTTP 接口（默认 `localhost:7850` = JunimoBridge；也兼容 NagiBridge-Remix 的 `7842`）操控《星露谷物语》里一个角色。提供 **37 个意图工具**，覆盖：感知 / 移动 / 交互 / 界面 / 农活 / 箱子取物 / 吃 / 社交 / 节日 / 生计。
+本项目是一个**手写 MCP 服务器**（OCaml，单 exe），通过**执行器 mod** 的 HTTP 接口（默认 `localhost:7850` = JunimoBridge；也兼容 NagiBridge-Remix 的 `7842`）操控《星露谷物语》里一个角色。提供 **41 个意图工具**，覆盖：感知 / 移动 / 交互 / 界面 / 农活 / 箱子取物 / 吃 / 社交 / 节日 / 生计。
 
 数据流：**你（MCP 客户端）→ stdio JSON-RPC → junimo-mcp.exe → HTTP → mod → 游戏**。你只管调工具；翻译与可靠性（时序等待、游戏侧校验、失败回滚）由服务器内部处理。
 
@@ -135,14 +135,14 @@ command = "<EXE>"
    - 正常返回 = 全链路通了 ✓
    - "连接失败" = 检查：游戏在跑吗 / 执行器 mod 是否就位（`Mods\JunimoBridge\` 或 `Mods\NagiBridge\`，应有 dll + `manifest.json`）/ 端口是否被占（`netstat -ano | findstr 7850`）/ 地址是不是写成了 127.0.0.1
    - "还没有进入存档" = 正常，请用户进档后再操作
-3. 确认工具列表为 37 个
+3. 确认工具列表为 41 个
 
 ### 部署常见问题
 
 | 现象 | 原因 / 处理 |
 |---|---|
 | 游戏开着但连不上 | mod 没到位，或旧版 mod 残留（UniqueID 冲突，检查 `Mods` 下是否同时有新旧两个 NagiBridge）；装 JunimoBridge 时若只拷了 `JunimoBridge.dll` 而漏了 `FSharp.Core.dll`，SMAPI 会整包跳过 |
-| 动作"没反应"/报不可达 | ① 有菜单/对话/事件开着（模态界面下动作端点会挂到超时、角色也不能移动）→ 看报错里给的原文与选项处理（`menu_click {"option":N}` / `press_key confirm` / 剧本事件 `press_key skip`）；② **游戏窗口失焦**（SDV 失焦会暂停，动作不生效）→ 把游戏窗口切到前台 |
+| 动作"没反应"/报不可达 | ① 有菜单/对话/事件开着（模态界面下动作端点会挂到超时、角色也不能移动）→ 看报错里给的原文与选项处理（`menu_click {"option":N}` / `press_key confirm` / 剧本事件 `press_key skip`）；② **焦点链路异常**：JunimoBridge ≥0.3.0 起后台操控默认开、最小化也能完整操控，不必切前台；只有用旧执行器（NagiBridge）或显式关掉后台开关时才会失焦暂停 → 那种情况才需要 `junimo_focus` |
 | GitHub 下载 exe 缓慢 / 不通 | 换时段或让用户手动下载 Releases；也可从源码构建（见文末《开发 Agent》） |
 | 手写调试请求被拒 | 只能 `http://localhost:7850`（不能 127.0.0.1）；命令行调用要带 `--noproxy '*'`（绕系统代理） |
 | SMAPI 控制台红字 "Steam achievements won't work" | 正常（非 Steam 启动的代价，不影响功能） |
@@ -154,7 +154,7 @@ command = "<EXE>"
 
 1. **游戏在跑吗**：直接调 `get_state`。报"连接失败 / 游戏未启动"→ 游戏没开（提醒用户运行 `StardewModdingAPI.exe`，别走 Steam）。
 2. **进档了吗**：`get_state` 回答"游戏还没有进入存档"→ 在标题菜单，先让用户进档；未进档时所有动作工具都会拒绝。
-3. **工具齐吗**：你的工具列表应有 37 个（`get_state` … `festival_answer`）。少于 37 说明连接的是旧版本服务器（请确保指向最新版 `junimo-mcp.exe`）。
+3. **工具齐吗**：你的工具列表应有 41 个（`get_state` … `minigame`）。少于 41 说明连接的是旧版本服务器（请确保指向最新版 `junimo-mcp.exe`）；改过 exe 后要重启客户端才会重新发现工具。
 
 ## 十条铁律（先背，不然会翻车）
 
@@ -169,7 +169,7 @@ command = "<EXE>"
 9. **"没有需要浇水的作物"不是错误**：雨天、洒水器覆盖、或刚浇过时，`water` 会这样回答——如实接受即可。
 10. **节日查询用 `festival`**（今天/明天/下一个）；参加节日要走游戏原生入口（别 `warp` 到节日场地，不触发场景）。
 
-## 工具速查（37 个，按"我想…"找）
+## 工具速查（41 个，按"我想…"找）
 
 | 我想… | 工具 | 关键说明 |
 |---|---|---|
@@ -200,6 +200,10 @@ command = "<EXE>"
 | **看剧情 / 推进剧情** | `story` | `read` 读当前一屏（说话人+台词+选项）、`next` 下一屏、`choose option=N` 选回答、`skip` 跳过整段。剧情**不会**被自动按掉；`get_state` 也会报出当前剧情。`choose` 内部是**两段式**（先登记答案、再补一发真实点击让框关掉）——真机实测这样才有效 |
 | **关菜单** | `menu_close` | 关掉当前菜单/文本框；睡完的 SaveGameMenu、夜里的 ShippingMenu 必须关掉才能继续动作 |
 | 选中物品 / 使用手持 / 挥工具 / 与面前格交互 | `select_item` / `use_held` / `swing_tool` / `interact` | 播种放置用 `use_held`；对话 NPC 用 `interact` |
+| 查钓鱼状态 / 找钓点 | `fishing` | `radius>0` 时列出附近水域与「站哪格、往哪抛」 |
+| 蓄力抛竿 | `cast` | 按住「使用」再松手，`ms` 越大越远；失败自动重试 |
+| **全自动钓一条** | `fish` | 抛竿→等咬钩→提竿→控绿条→结算。**回执只认 `delivered`**：`won` 仅表示打赢小游戏、`directCatch` 是垃圾类直接入包、`progressPeak=1` 不是成果。产出垃圾是游戏特性，不用排查 |
+| 小游戏（非钓鱼） | `minigame` | `read` / `key` / `quit`；键名是字面物理键（小游戏不读 `options` 绑定） |
 
 ## 一个标准工作日（照抄即可）
 
@@ -226,9 +230,9 @@ command = "<EXE>"
 ## 如果你是开发 Agent（要改本仓库）
 
 - **构建**：`bash build.sh build`（→ `_build/default/bin/main.exe`）；`bash build.sh runtest`（单测）；`bash build.sh release`（拷进 `release/`）。受管 Cygwin 环境走 `build.sh`（Windows 细节见 README）；标准 opam 环境直接用 `dune build` / `dune runtest`。
-- **测试四层**：单测（`dune runtest`）→ mock 冒烟（`python test/mock_smoke.py`，**不需要游戏**，114 项）→ 真机脚本（`test/live_*.py`，需要游戏在跑）→ 压测（`live_soak.py`）。
+- **测试四层**：单测（`dune runtest`）→ mock 冒烟（`python test/mock_smoke.py`，**不需要游戏**，157 项）→ 真机脚本（`test/live_*.py`，需要游戏在跑）→ 压测（`live_soak.py`）。
 - **改行为 → 必须同步测试**：新增/修改端点要同步改 `test/mock_nagibridge.py` + `test/mock_smoke.py` 断言；涉及真机语义的补 `test/live_*.py`。
-- **代码地图**：`lib/mcp.ml`（协议核心）/ `lib/intents.ml`（37 个工具实现与渲染，最大文件；含**效果核验式动作** `op_use_effect`）/ `lib/game_api.ml`（端点封装）/ `lib/game_state.ml`（状态解析与中文渲染）/ `lib/wait.ml`（等待器 + 自适应结算 + `/walk_to` 到达轮询）/ `lib/http_client.ml`（HTTP 层：原生 socket + keep-alive，唯一 IO；`STARDEW_HTTP=curl` 回退）。依赖极简：仅 `yojson`。
+- **代码地图**：`lib/mcp.ml`（协议核心）/ `lib/intents.ml`（41 个工具实现与渲染，最大文件；含**效果核验式动作** `op_use_effect`）/ `lib/game_api.ml`（端点封装）/ `lib/game_state.ml`（状态解析与中文渲染）/ `lib/wait.ml`（等待器 + 自适应结算 + `/walk_to` 到达轮询）/ `lib/http_client.ml`（HTTP 层：原生 socket + keep-alive，唯一 IO；`STARDEW_HTTP=curl` 回退）。依赖极简：仅 `yojson`。
 - **两条"快路径"（`till`/`water`/`go_to` 内部自动选，无需 Agent 关心）**：`go_to` 走 mod 的 `/walk_to`（一次请求走全程 + 出发前校验越界/门格/站不住；`STARDEW_WALK=move` 可回退旧的分段接力）；`till`/`water` 在**工具升级等级 ≥1** 且格数 ≥4 时走 mod 的 `/tool_area`（矩形蓄力批量；`STARDEW_AREA=off|force` 可强制切换，`STARDEW_AREA_TIMEOUT` 调等待上限）。
 - **纪律**：不发假成功（报成功必须在游戏里真发生；失败必须有可读中文原因）。⚠️ **挥动的生效帧在 `/use` 返回后约 550ms 才落**（真机实测）：所以农活动作一律用 `op_use_effect` **回读地块直到终态出现**再继续下一格——睡固定时长会打断上一格的挥动，造成"3 格一行必丢中间格"式假成功。工具描述要写明"什么时候用 + 注意事项"。
 - **部署**：本地开发用新二进制放 `release/vN/junimo-mcp.exe`（`release/` 已 gitignore、不入库），更新 `~/.workbuddy/mcp.json` 指向它；**重启 WorkBuddy 后连接器才加载新版**。对外分发走 GitHub Releases（README 有下载链接）。

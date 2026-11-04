@@ -6,6 +6,10 @@
 
 ### 文档更正（无功能变化）
 
+> 后续（2026-11-05）：`AGENTS.md` 与四语 README 已对齐 41 个工具、JunimoBridge **v0.3.2**、
+> 157 项 mock、后台操控默认开，以及 `fish` 三层回执。`fish` 的收线交付与连续钓已由
+> [JunimoBridge v0.3.1 / v0.3.2](https://github.com/mlkgrnt/junimo-bridge/releases) 修好（见下方 3.3.0 的「已知限制」更新说明）。
+
 `fish` 的「打赢小游戏但物品没入包」**与窗口焦点无关** —— 真机在前台、失焦、
 最小化三种状态下都复现过。3.3.0 的工具描述里写「窗口无焦点时收线动画会卡住」是错的，
 容易让人以为聚焦窗口就能解决。实际根因是 `FishingRod` 收线动画状态机卡在
@@ -33,6 +37,11 @@
 进度满了之后还有一段收线动画才发鱼，这段动画在自动化下会卡住（**与窗口焦点无关**，前台同样复现）。
 回执因此**分开报 `won` 与 `delivered`**，`ok` 只认真的多出来东西，绝不拿进度冒充成果。
 想稳就用 `cast` + `fishing` 分步操作。
+
+> **此限制已在 2026-11-05 解除**：JunimoBridge **v0.3.1** 修好收线交付（每帧把 `UsingTool`
+> 按回 true，`fishCaught` 后调 `doneHoldingFish`），**v0.3.2** 修好连续钓空转（去掉 `reelOnce`
+> 里误加的 `forceCanMove()`）。改的是 mod 侧，**不用升级本 exe**。现在 `fish` 连续多竿都
+> `delivered=true`；产出垃圾是游戏特性，不是故障。
 
 ### 测试
 

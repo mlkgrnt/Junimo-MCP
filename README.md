@@ -4,7 +4,7 @@
 
 **简体中文** · [繁體中文](README.zh-Hant.md) · [English](README.en-US.md) · [Español](README.es-ES.md)
 
-用 **OCaml 手写**的 MCP 服务器：给 AI Agent 一副在《星露谷物语》里干活的手——**37 个意图工具（含剧情阅读与菜单关闭）**，从种地收割到取物聚餐、社交过节，全流程可靠执行。
+用 **OCaml 手写**的 MCP 服务器：给 AI Agent 一副在《星露谷物语》里干活的手——**41 个意图工具（含剧情阅读与菜单关闭）**，从种地收割到取物聚餐、社交过节，全流程可靠执行。
 
 - **协议层**：JSON-RPC 2.0 over stdio，手写实现（`initialize` / `tools/list` / `tools/call`），零 MCP 框架依赖
 - **控制层**：原生 HTTP + keep-alive（OCaml socket）→ [JunimoBridge](https://github.com/mlkgrnt/junimo-bridge)（默认 `http://localhost:7850`）→ 游戏内角色；也兼容 [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix)（`7842`，用 `STARDEW_API_URL` 指过去）
@@ -35,14 +35,14 @@ Agent 会照 `AGENTS.md` 的《部署安装》章节自动完成全部步骤：
 ```
 ┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7850   ┌──────────────────┐
 │ MCP 客户端  │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │  JunimoBridge    │ ──► 星露谷
-│  (你的 AI)  │     37 个意图工具     │    (OCaml 5.5)   │     原生 HTTP(socket)   │    (SMAPI mod)   │
+│  (你的 AI)  │     41 个意图工具     │    (OCaml 5.5)   │     原生 HTTP(socket)   │    (SMAPI mod)   │
 └────────────┘                       └──────────────────┘                         └──────────────────┘
 ```
 
 工程亮点：
 
 - **可靠性三纪律**：游戏侧校验、逐格三态计分（成功 / 幂等跳过 / 失败带原因）、精确回读——"绝不假成功"；
-- **四层测试防线**：单元测试 + **114 项 mock 冒烟**（不用开游戏）+ 真机测试套件 + 压测；
+- **四层测试防线**：单元测试 + **157 项 mock 冒烟**（不用开游戏）+ 真机测试套件 + 压测；
 - **全中文人话回执**：工具返回的错误文案可直接展示给用户，Agent 无需二次翻译。
 
 ## 前置依赖
@@ -51,7 +51,7 @@ Agent 会照 `AGENTS.md` 的《部署安装》章节自动完成全部步骤：
 |---|---|
 | 游戏 | Stardew Valley **1.6.15**（Steam 版实测） |
 | SMAPI | **4.5.2**（或 4.x 兼容版本） |
-| 执行器 mod | **JunimoBridge v0.1.0**（解压到 `Mods/JunimoBridge/`，端口 **7850**）—— 或 [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) v0.9（`Mods/NagiBridge/`，端口 7842） |
+| 执行器 mod | **JunimoBridge v0.3.2**（解压到 `Mods/JunimoBridge/`，端口 **7850**）—— 或 [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) v0.9（`Mods/NagiBridge/`，端口 7842） |
 | OCaml（仅开发 / 构建需要） | **5.5.0** + dune 3.24 + yojson 3.0（Windows：opam + 受管 Cygwin，见下） |
 
 > **推荐用 JunimoBridge**：它是本项目的姊妹仓库（同样 MIT、只实现真正在用的那批端点、报文与 NagiBridge 对齐），
@@ -103,7 +103,7 @@ Agent 会照 `AGENTS.md` 的《部署安装》章节自动完成全部步骤：
 | Codex | `~/.codex/config.toml` | `codex mcp add junimo -- "<EXE>"` |
 | DeepSeek Harness | dsh profile（`dsh plugin add`） | 使用 [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) 插件，一条命令，exe 已内置 |
 
-> **DeepSeek Harness 用户**：无需手工编写 cordis patch。[dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) 已将本项目的 37 个工具封装为 dsh 组合包，内含 `junimo-mcp.exe`、部署自检（`junimo_doctor`）与游戏生命周期工具（聚焦 / 启动 / 读档），以及随包 skill 与操作纪律提示词。
+> **DeepSeek Harness 用户**：无需手工编写 cordis patch。[dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) 已将本项目的 41 个工具封装为 dsh 组合包，内含 `junimo-mcp.exe`、部署自检（`junimo_doctor`）与游戏生命周期工具（聚焦 / 启动 / 读档），以及随包 skill 与操作纪律提示词。
 >
 > ```bash
 > dsh plugin --profile web add github:mlkgrnt/dsh-junimo
@@ -121,7 +121,7 @@ curl -sS --noproxy '*' http://localhost:7850/status
 
 > ⚠️ 地址必须用 `http://localhost:7850`，**不能用 `127.0.0.1`**——mod 的 HttpListener 只注册了 localhost 前缀，127.0.0.1 会被系统以 400 拒绝（实机实测）。同理，命令行调用一律带 `--noproxy '*'`。
 
-## 工具清单（37）
+## 工具清单（41）
 
 | 组 | 工具 | 说明 |
 |---|---|---|
@@ -162,6 +162,10 @@ curl -sS --noproxy '*' http://localhost:7850/status
 | | `map_info` | 建筑 / 传送点 / NPC / 动物情报（导航规划用） |
 | | `pause_time` | 冻结游戏时钟（长任务防晕倒；记得恢复） |
 | | `resume_time` | 恢复被冻结的游戏时钟 |
+| 钓鱼 | `fishing` | 钓鱼状态 + 找钓点（`radius>0` 时列出附近水域与「站哪格、往哪抛」） |
+| | `cast` | 蓄力抛竿，`ms` 控制远近；失败自动重试一次 |
+| | `fish` | 全自动一条：抛竿→等咬钩→提竿→控绿条→结算。回执分 `won` / `delivered` / `directCatch`，**只认 `delivered`** |
+| 小游戏 | `minigame` | `read` / `key` / `quit`；键名用字面物理键（小游戏不读键位绑定） |
 
 农活组统一纪律：站 `(tx, ty-1)` 朝下 → **瞬移 + 精确回读校验** → `/use`（核对返回命中格 == 期望格）→ settle 0.55s；每格失败带原因列出，绝不盲挥。
 
@@ -191,7 +195,7 @@ bash build.sh exec -- ...    # 透传任意 dune 子命令
 | 套件 | 命令 | 说明 |
 |---|---|---|
 | 单元测试 | `bash build.sh runtest` | JSON-RPC 编解码、状态解析 / 渲染、蛇形地块数学 |
-| mock 冒烟 | `python test/mock_smoke.py`（自动起 mock） | 假 NagiBridge（完整状态机：地图 / 移动 / 菜单 / 校验 / 生计 / 取物 / 社交 / 节日），**114 项**全流程断言，**不需要游戏** |
+| mock 冒烟 | `python test/mock_smoke.py`（自动起 mock） | 假 NagiBridge（完整状态机：地图 / 移动 / 菜单 / 校验 / 生计 / 取物 / 社交 / 节日），**157 项**全流程断言，**不需要游戏** |
 | 真机闭环 | `python test/live_e2e.py` | 需游戏在跑：锄地 → 播种 → 浇水 + 独立 HTTP 交叉核验 |
 | 真机完整农活 | `python test/live_m4.py` | 需游戏在跑：自动进档 → 买种 → 3×3 锄 / 种 / 浇 → 催熟收割 → 长距分段导航 |
 | 真机 v2 生计 | `python test/live_v2.py` | 需游戏在跑：map / 箱子读写 / 时钟控制 / **睡觉翻日（会推进一天并写盘）** |
@@ -249,6 +253,8 @@ https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-macos-
 
 ## 已知限制
 
+- **`fish` 回执分三层**：`won` 只是打赢钓鱼小游戏，`delivered` 才是物品真入包，`directCatch` 是垃圾类直接发放（不进小游戏）；别把 `progressPeak=1` 当成果。**产出垃圾是游戏特性**（农场池塘 `getFish` 本身如此），不是故障，不用排查；换钓点或加鱼饵可改善。
+
 - **截图 / 录像不可用**：本机 GDI 抓不到 OpenGL 画面——验证一律走游戏内 API 读数（比截图更精确）。
 - **长距移动**：mod 的 BFS 有 500 步上限，`go_to` 已内置分段接力（≤10 格/段）绕过；跨地图请用 `warp`。
 - **给宠物起名（NamingMenu）是 mod 盲区**：`/menu` 不暴露它的文本框与按钮。工具输出里会直接给出办法——`menu_click {"x":800,"y":352}` 接受默认名字（16:9 布局实测有效），`press_key cancel` 则退回上一步。
@@ -263,7 +269,7 @@ https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-macos-
 
 | 文档 | 给谁看 | 内容 |
 |---|---|---|
-| `AGENTS.md` | **AI Agent** | 部署安装 + 十条铁律 + 37 工具速查 + 开发纪律 |
+| `AGENTS.md` | **AI Agent** | 部署安装 + 十条铁律 + 41 工具速查 + 开发纪律 |
 | `README.md` | 人类 | 本文件（简体中文 zh-Hans） |
 | `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | 人类 | 繁中 / 英文 / 西语版本 |
 | [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) | DeepSeek Harness 用户 | dsh 插件版：内置 exe、一条命令安装、含部署自检与游戏生命周期工具 |

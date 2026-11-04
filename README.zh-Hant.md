@@ -4,7 +4,7 @@
 
 [简体中文](README.md) · **繁體中文** · [English](README.en-US.md) · [Español](README.es-ES.md)
 
-以 **OCaml 手寫**的 MCP 伺服器：給 AI Agent 一雙在《星露谷物語》裡幹活的手——**37 個意圖工具（含劇情閱讀與選單關閉）**，從種田採收到取物聚餐、社交過節，全流程可靠執行。
+以 **OCaml 手寫**的 MCP 伺服器：給 AI Agent 一雙在《星露谷物語》裡幹活的手——**41 個意圖工具（含劇情閱讀與選單關閉）**，從種田採收到取物聚餐、社交過節，全流程可靠執行。
 
 - **協定層**：JSON-RPC 2.0 over stdio，手寫實作（`initialize` / `tools/list` / `tools/call`），零 MCP 框架相依
 - **控制層**：原生 HTTP + keep-alive（OCaml socket）→ [JunimoBridge](https://github.com/mlkgrnt/junimo-bridge)（預設 `http://localhost:7850`）→ 遊戲內角色；也相容 [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix)（`7842`，用 `STARDEW_API_URL` 指過去）
@@ -35,7 +35,7 @@ Agent 會照 `AGENTS.md` 的《部署安裝》章節自動完成所有步驟：
 ```
 ┌────────────┐   stdio (JSON-RPC)   ┌──────────────────┐   HTTP localhost:7850   ┌──────────────────┐
 │ MCP 客戶端  │ ◄──────────────────► │ junimo-mcp.exe  │ ◄─────────────────────► │  JunimoBridge    │ ──► 星露谷物語
-│  (你的 AI)  │     37 個意圖工具     │    (OCaml 5.5)   │     原生 HTTP(socket)   │    (SMAPI mod)   │
+│  (你的 AI)  │     41 個意圖工具     │    (OCaml 5.5)   │     原生 HTTP(socket)   │    (SMAPI mod)   │
 └────────────┘                       └──────────────────┘                         └──────────────────┘
 ```
 
@@ -51,7 +51,7 @@ Agent 會照 `AGENTS.md` 的《部署安裝》章節自動完成所有步驟：
 |---|---|
 | 遊戲 | Stardew Valley **1.6.15**（Steam 版實測） |
 | SMAPI | **4.5.2**（或 4.x 相容版本） |
-| 執行器 mod | **JunimoBridge v0.1.0**（解壓縮到 `Mods/JunimoBridge/`，連接埠 **7850**）—— 或 [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) v0.9（`Mods/NagiBridge/`，連接埠 7842） |
+| 執行器 mod | **JunimoBridge v0.3.2**（解壓縮到 `Mods/JunimoBridge/`，連接埠 **7850**）—— 或 [NagiBridge-Remix](https://github.com/pendel001/NagiBridge-Remix) v0.9（`Mods/NagiBridge/`，連接埠 7842） |
 | OCaml（僅開發 / 建置需要） | **5.5.0** + dune 3.24 + yojson 3.0（Windows：opam + 受管 Cygwin，見下） |
 
 > **推薦用 JunimoBridge**：它是本專案的姊妹倉庫（同樣 MIT、只實作真正在用的那批端點、報文與 NagiBridge 對齊），從 [Releases](https://github.com/mlkgrnt/junimo-bridge/releases/latest) 下 `JunimoBridge.zip` 解壓縮到 `Mods/` 即可。兩邊報文形狀一致，`junimo-mcp.exe` 不用改一行；換哪個只由 `STARDEW_API_URL` 決定。
@@ -100,7 +100,7 @@ Agent 會照 `AGENTS.md` 的《部署安裝》章節自動完成所有步驟：
 | Codex | `~/.codex/config.toml` | `codex mcp add junimo -- "<EXE>"` |
 | DeepSeek Harness | dsh profile（`dsh plugin add`） | 使用 [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) 外掛，一行指令，exe 已內建 |
 
-> **DeepSeek Harness 使用者**：無需手寫 cordis patch。[dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) 已將本專案的 37 個工具封裝為 dsh 組合包，內含 `junimo-mcp.exe`、部署自檢（`junimo_doctor`）與遊戲生命週期工具（聚焦 / 啟動 / 讀檔），以及隨包 skill 與操作紀律提示詞。
+> **DeepSeek Harness 使用者**：無需手寫 cordis patch。[dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) 已將本專案的 41 個工具封裝為 dsh 組合包，內含 `junimo-mcp.exe`、部署自檢（`junimo_doctor`）與遊戲生命週期工具（聚焦 / 啟動 / 讀檔），以及隨包 skill 與操作紀律提示詞。
 >
 > ```bash
 > dsh plugin --profile web add github:mlkgrnt/dsh-junimo
@@ -118,7 +118,7 @@ curl -sS --noproxy '*' http://localhost:7850/status
 
 > ⚠️ 位址必須用 `http://localhost:7850`，**不能用 `127.0.0.1`**——mod 的 HttpListener 只註冊了 localhost 前綴，127.0.0.1 會被系統以 400 拒絕（實機實測）。同理，命令列呼叫一律帶 `--noproxy '*'`。
 
-## 工具清單（37）
+## 工具清單（41）
 
 | 群組 | 工具 | 說明 |
 |---|---|---|
@@ -159,6 +159,10 @@ curl -sS --noproxy '*' http://localhost:7850/status
 | | `map_info` | 建築 / 傳送點 / NPC / 動物資訊（導航規劃用） |
 | | `pause_time` | 凍結遊戲時鐘（長任務防昏倒；記得恢復） |
 | | `resume_time` | 恢復被凍結的遊戲時鐘 |
+| 釣魚 | `fishing` | 釣魚狀態 + 找釣點（`radius>0` 列出附近水域與「站哪格、往哪拋」） |
+| | `cast` | 蓄力拋竿，`ms` 控制遠近；失敗自動重試一次 |
+| | `fish` | 全自動一條：拋竿→等咬鉤→提竿→控綠條→結算。回執分 `won` / `delivered` / `directCatch`，**只認 `delivered`** |
+| 小遊戲 | `minigame` | `read` / `key` / `quit`；鍵名用字面實體鍵（小遊戲不讀按鍵綁定） |
 
 農活組統一紀律：站 `(tx, ty-1)` 朝下 → **瞬移 + 精確回讀驗證** → `/use`（核對回傳命中格 == 期望格）→ settle 0.55s；每格失敗附原因列出，絕不盲目揮動。
 
@@ -246,6 +250,8 @@ https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-macos-
 
 ## 已知限制
 
+- **`fish` 回執分三層**：`won` 只是打贏釣魚小遊戲，`delivered` 才是物品真入包，`directCatch` 是垃圾類直接發放；別把 `progressPeak=1` 當成果。**產出垃圾是遊戲特性**（農場池塘 `getFish` 本就如此），不是故障，不用排查。
+
 - **截圖 / 錄影不可用**：本機 GDI 抓不到 OpenGL 畫面——驗證一律走遊戲內 API 讀數（比截圖更精確）。
 - **長距離移動**：mod 的 BFS 有 500 步上限，`go_to` 已內建分段接力（≤10 格/段）繞過；跨地圖請用 `warp`。
 - **替寵物取名（NamingMenu）是 mod 盲區**：`/menu` 不暴露它的文字框與按鈕。工具輸出會直接給辦法——`menu_click {"x":800,"y":352}` 接受預設名字（16:9 佈局實測有效），`press_key cancel` 則退回上一步。
@@ -260,7 +266,7 @@ https://github.com/mlkgrnt/Junimo-MCP/releases/latest/download/junimo-mcp-macos-
 
 | 文件 | 給誰看 | 內容 |
 |---|---|---|
-| `AGENTS.md`（簡體中文） | **AI Agent** | 部署安裝 + 十條鐵律 + 37 工具速查 + 開發紀律 |
+| `AGENTS.md`（簡體中文） | **AI Agent** | 部署安裝 + 十條鐵律 + 41 工具速查 + 開發紀律 |
 | `README.md` / `README.zh-Hant.md` / `README.en-US.md` / `README.es-ES.md` | 人類 | 簡中（zh-Hans，預設）/ 繁中（本檔）/ 英文 / 西語 |
 | [dsh-junimo](https://github.com/mlkgrnt/dsh-junimo) | DeepSeek Harness 使用者 | dsh 外掛版：內建 exe、一行指令安裝、含部署自檢與遊戲生命週期工具 |
 | `test/` | 開發者 | 四層測試套件 |
